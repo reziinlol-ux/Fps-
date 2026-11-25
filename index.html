@@ -19,9 +19,9 @@
   button { font: inherit; color: #fff; cursor: pointer; }
   .primary { background: #fff; color: #111; border: none; border-radius: 999px; padding: 12px 22px; font-weight: 800; font-size: 16px; }
   .ghostbtn { background: rgba(255,255,255,0.14); border: 2px solid var(--ring); border-radius: 999px; padding: 10px 18px; font-weight: 700; font-size: 14px; }
-  .ui { position: fixed; inset: 0; pointer-events: none; }
+  .ui { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
   .ctl {
-    position: fixed; transform: translate(-50%, -50%) scale(var(--s));
+    position: fixed; z-index: 5; transform: translate(-50%, -50%) scale(var(--s));
     pointer-events: none; box-sizing: border-box;
     display: flex; align-items: center; justify-content: center; text-align: center;
     border: 3px solid var(--ring); background: rgba(255,255,255,0.12);
@@ -38,6 +38,17 @@
   #jump { width: 104px; height: 104px; font-size: 15px; }
   #fire { width: 96px; height: 96px; background: rgba(255,80,60,0.28); font-size: 15px; }
   #aim { width: 80px; height: 80px; font-size: 13px; }
+  #gren, #drone, #crash { width: 66px; height: 66px; border-radius: 50%; font-size: 11px; }
+  #crash { background: rgba(255,80,60,0.28); }
+  #extraLbl { font-size: 12px; margin-top: 2px; }
+  #vhs { position: fixed; inset: 0; z-index: 2; pointer-events: none; display: none; overflow: hidden; }
+  #vhs.on { display: block; }
+  #vhs::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,0.30) 3px, rgba(0,0,0,0) 4px); }
+  #vhs::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.6) 100%); }
+  #vhsNoise { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.14; image-rendering: pixelated; mix-blend-mode: screen; }
+  #vhs .bar { position: absolute; left: 0; right: 0; height: 16px; background: rgba(255,255,255,0.12); animation: vhsroll 4.5s linear infinite; }
+  @keyframes vhsroll { from { top: -20px; } to { top: 100%; } }
+  #vhs .rec { position: absolute; left: 50%; transform: translateX(-50%); top: 14px; color: #ff5a5a; font: 700 14px ui-monospace, monospace; text-shadow: 0 0 4px rgba(0,0,0,.6); }
   #reload { width: 66px; height: 66px; font-size: 12px; }
   #duck { width: 66px; height: 66px; font-size: 12px; }
   #prone { width: 62px; height: 62px; font-size: 12px; }
@@ -53,11 +64,11 @@
   }
   .hs.sel { border-color: #ffd24a; box-shadow: 0 0 0 2px rgba(255,210,74,0.4); }
   #settingsBtn {
-    position: fixed; left: 16px; top: 14px; width: 44px; height: 44px; border-radius: 50%;
+    position: fixed; z-index: 5; left: 16px; top: 14px; width: 44px; height: 44px; border-radius: 50%;
     border: 2px solid var(--ring); background: rgba(0,0,0,0.35); font-size: 22px; pointer-events: none;
     display: flex; align-items: center; justify-content: center; color: #fff;
   }
-  #hud { position: fixed; left: 72px; top: 18px; font-weight: 800; text-shadow: 0 1px 3px rgba(0,0,0,0.7); pointer-events: none; }
+  #hud { position: fixed; z-index: 5; left: 72px; top: 18px; font-weight: 800; text-shadow: 0 1px 3px rgba(0,0,0,0.7); pointer-events: none; }
   #team { font-size: 14px; }
   #score { font-size: 13px; margin-top: 2px; }
   #stanceLbl { font-size: 12px; margin-top: 3px; }
@@ -68,9 +79,9 @@
     border-radius: 50%; background: rgba(255,255,255,0.92); box-shadow: 0 0 2px rgba(0,0,0,0.6); pointer-events: none;
   }
   #crosshair.hit { background: #ff4a3a; width: 12px; height: 12px; margin: -6px 0 0 -6px; }
-  #hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0;
+  #hurt { position: fixed; inset: 0; z-index: 3; pointer-events: none; opacity: 0;
     background: radial-gradient(circle at center, transparent 45%, rgba(200,20,20,0.75)); }
-  #scope { position: fixed; inset: 0; pointer-events: none; display: none;
+  #scope { position: fixed; inset: 0; z-index: 1; pointer-events: none; display: none;
     background: radial-gradient(circle at 50% 50%, transparent 0, transparent 26vmin, rgba(0,0,0,0.97) 27vmin); }
   #deadMsg {
     position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%); text-align: center;
@@ -82,7 +93,7 @@
     display: flex; gap: 12px; align-items: center; padding: 8px 10px 8px 16px; border-radius: 999px;
     background: rgba(0,0,0,0.75); font-size: 14px; font-weight: 700;
   }
-  .dmgWrap { position: fixed; width: 0; height: 0; pointer-events: none; display: none; }
+  .dmgWrap { position: fixed; z-index: 6; width: 0; height: 0; pointer-events: none; display: none; }
   .dmgArrow {
     position: absolute; left: 0; top: 0; width: 0; height: 0;
     border-left: 11px solid transparent; border-right: 11px solid transparent; border-bottom: 24px solid #ff4a3a;
@@ -144,6 +155,7 @@
   <div id="team">Team ALPHA</div>
   <div id="score">Kills 0 · Tode 0</div>
   <div id="stanceLbl"></div>
+  <div id="extraLbl"></div>
   <div id="hpBar"><div id="hpFill"></div></div>
 </div>
 <div class="ctl round" id="jump">SPRUNG</div>
@@ -152,6 +164,9 @@
 <div class="ctl round" id="reload">NACHL.</div>
 <div class="ctl round" id="duck">DUCKEN</div>
 <div class="ctl round" id="prone">LIEGEN</div>
+<div class="ctl round" id="gren">GRANATE</div>
+<div class="ctl round" id="drone">DROHNE</div>
+<div class="ctl round" id="crash">CRASH</div>
 <div class="ctl" id="hotbar">
   <div id="hbHead">–</div>
   <div id="hbSlots">
@@ -162,6 +177,7 @@
 <div id="dmgRoot"></div>
 <div id="hurt"></div>
 <div id="scope"></div>
+<div id="vhs"><canvas id="vhsNoise" width="200" height="112"></canvas><div class="bar"></div><div class="rec" id="recTxt">● REC</div></div>
 <div id="deadMsg">ABGESCHOSSEN<small id="respawnTxt"></small></div>
 <div id="editbar" class="hidden"><span>Steuerung verschieben: Elemente ziehen</span><button id="editDone" class="primary">Fertig</button></div>
 
@@ -235,11 +251,11 @@ const POSE_PIVOT = [1.45, 0.95, 0.5];   // 3. Person: Drehpunkt der Kamera
 const POSE_SPEED = [1, 0.6, 0.3];       // Laufgeschwindigkeit je Haltung
 const lerpPose = (arr, p) => (p <= 1 ? lerp(arr[0], arr[1], p) : lerp(arr[1], arr[2], p - 1));
 const STICK_MAX = 70, STICK_DEAD = 0.12, LOOK_SENS = 0.0042, JUMP_BUFFER = 0.15;
-const MAP_X = 78, MAP_Z = 53;           // Spielfeldgrenze
-const CORE_X = 58, CORE_Z = 40;         // flache Stadt im Zentrum
+const MAP_X = 130, MAP_Z = 90;           // Spielfeldgrenze
+const CORE_X = 104, CORE_Z = 66;         // flache Stadt im Zentrum
 const ALPHA_COL = 0x2f6fd0, BRAVO_COL = 0xd0662f;
-const SPAWN = { alpha: { x: -48, z: 0, yaw: -Math.PI / 2 }, bravo: { x: 48, z: 0, yaw: Math.PI / 2 } };
-const ZONE = { alpha: [-56, -40, -9, 9], bravo: [40, 56, -9, 9] };
+const SPAWN = { alpha: { x: -88, z: 0, yaw: -Math.PI / 2 }, bravo: { x: 88, z: 0, yaw: Math.PI / 2 } };
+const ZONE = { alpha: [-100, -72, -14, 14], bravo: [72, 100, -14, 14] };
 
 // ===================== Einstellungen (lokal gespeichert) =====================
 const SETTINGS_KEY = 'pillfps.settings.v3';
@@ -253,6 +269,9 @@ const DEFAULT_LAYOUT = {
   prone:  { x: 0.79,  y: 0.74 },
   hotbar: { x: 0.88,  y: 0.58 },
   view:   { x: 0.88,  y: 0.07 },
+  gren:   { x: 0.52,  y: 0.88 },
+  drone:  { x: 0.52,  y: 0.73 },
+  crash:  { x: 0.52,  y: 0.60 },
 };
 const defaults = { sens: 2, size: 1, fixedStick: false, invertY: false, layout: {}, team: 'alpha', slots: ['m4', 'p17', null, null] };
 let settings = { ...defaults };
@@ -268,7 +287,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xd3cdb8, 70, 230);
+scene.fog = new THREE.Fog(0xd3cdb8, 95, 300);
 const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 500);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
@@ -354,10 +373,10 @@ function groundAt(x, z) {
   const h = Math.sin(x * 0.085) * 1.5 + Math.cos(z * 0.11 + 1.3) * 1.3 + Math.sin((x + z) * 0.05) * 1.1;
   return h * m;
 }
-const PARKS = [[-36, -32, 6], [36, 32, 6], [-18, -34, 5], [18, 34, 5]];
+const PARKS = [[-72, -50, 8], [72, 50, 8], [-30, -58, 6], [30, 58, 6], [-70, 48, 6], [70, -48, 6]];
 function inPark(x, z) { return PARKS.some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r); }
 function makeTerrain() {
-  const g = new THREE.PlaneGeometry(MAP_X * 2, MAP_Z * 2, 156, 106);
+  const g = new THREE.PlaneGeometry(MAP_X * 2, MAP_Z * 2, 130, 90);
   g.rotateX(-Math.PI / 2);
   const pos = g.attributes.position, cols = new Float32Array(pos.count * 3);
   const cA = new THREE.Color(), cB = new THREE.Color(), cc = new THREE.Color();
@@ -578,8 +597,61 @@ function watchtower(x, z, s) {
   solid(x, z + 1.9, 4.3, 0.9, 0.25, C.rail, PH);
 }
 
-// ===================== Karte: Deckung, Dekoration, Aufbau =====================
-// Deckung (ca. 1.15 m hoch): hinter ihr kann man sich ducken
+// Zweigeschossiges Gebaeude: Erdgeschoss mit Tuer, Treppe links innen, Obergeschoss mit Fenstern, Flachdach.
+// door = 'n', 's' oder 'e' (nicht 'w', dort steht die Treppe)
+function house2(x, z, w, d, door = 's', opts = {}) {
+  const t = 0.35, hw = w / 2, hd = d / 2, GAP = 1.7, DH = 2.3;
+  const H1 = 3.2, FT = 0.3, WH = H1 + FT;          // Geschosshoehe, Deckenstaerke, Wandhoehe Erdgeschoss
+  const wallC = opts.wall ?? C.wall, roofC = opts.roof ?? C.roofDark;
+  const wallSet = (base, hh, doorSide) => {
+    const runs = [
+      { ax: 'x', c: z - hd + t / 2, side: 'n' }, { ax: 'x', c: z + hd - t / 2, side: 's' },
+      { ax: 'z', c: x - hw + t / 2, side: 'w' }, { ax: 'z', c: x + hw - t / 2, side: 'e' },
+    ];
+    for (const r of runs) {
+      if (r.ax === 'x') {
+        if (doorSide !== r.side) { solid(x, r.c, w, hh, t, wallC, base); continue; }
+        const seg = (w - GAP) / 2;
+        solid(x - hw + seg / 2, r.c, seg, hh, t, wallC, base);
+        solid(x + hw - seg / 2, r.c, seg, hh, t, wallC, base);
+        solid(x, r.c, GAP, hh - DH, t, wallC, base + DH);
+      } else {
+        if (doorSide !== r.side) { solid(r.c, z, t, hh, d, wallC, base); continue; }
+        const seg = (d - GAP) / 2;
+        solid(r.c, z - hd + seg / 2, t, hh, seg, wallC, base);
+        solid(r.c, z + hd - seg / 2, t, hh, seg, wallC, base);
+        solid(r.c, z, t, hh - DH, GAP, wallC, base + DH);
+      }
+    }
+  };
+  wallSet(0, WH, door);            // Erdgeschoss
+  wallSet(WH, H1, null);           // Obergeschoss (keine Tuer, nur ueber die Treppe)
+  // Treppe an der linken Innenwand: 8 Stufen, je 0.5 m lang, 0.4 m hoch
+  const x0 = x - hw + t;
+  for (let i = 0; i < 8; i++) solid(x0 + 0.25 + i * 0.5, z, 0.5, 0.4 * (i + 1), 2.4, C.step);
+  // Decke des Obergeschosses mit Treppenloch
+  const sx0 = x0 + 4.0, sx1 = x + hw - t;
+  solid((sx0 + sx1) / 2, z, sx1 - sx0, FT, d - 2 * t, 0x8a8478, H1);
+  // Flachdach
+  solid(x, z, w, 0.3, d, roofC, WH + H1);
+  // Einrichtung im Obergeschoss
+  solid(x + w * 0.2, z - hd * 0.3, 1.4, 0.7, 0.8, 0x6b4f33, WH);
+  solid(x - w * 0.1, z + hd * 0.4, 1.6, 1.8, 0.4, 0x4a4a48, WH);
+  solid(x + w * 0.25, z + hd * 0.3, 1.6, 0.9, 0.6, 0x5a5448, WH);
+  // Fenster (nur Optik), im Erdgeschoss nicht neben der Tuer
+  for (const hgt of [1.9, 5.4]) {
+    const low = hgt < 3;
+    for (const f of [-0.28, 0.28]) {
+      if (!(low && door === 'n')) vis('box', C.glass, x + w * f, hgt, z - hd - 0.02, 1.2, 1.0, 0.05);
+      if (!(low && door === 's')) vis('box', C.glass, x + w * f, hgt, z + hd + 0.02, 1.2, 1.0, 0.05);
+      if (!(low && door === 'w')) vis('box', C.glass, x - hw - 0.02, hgt, z + d * f, 0.05, 1.0, 1.2);
+      if (!(low && door === 'e')) vis('box', C.glass, x + hw + 0.02, hgt, z + d * f, 0.05, 1.0, 1.2);
+    }
+  }
+}
+
+// ===================== Karte: Deckung, Dekoration, Distrikte, Aufbau =====================
+// Deckung (ca. 1.15 m hoch): dahinter kann man sich ducken
 function cover(x, z, len, rot, color) {
   if (rot) solid(x, z, 1.2, 1.15, len, color);
   else solid(x, z, len, 1.15, 1.2, color);
@@ -595,113 +667,175 @@ function lamp(x, z) {                    // Laterne (nur Optik)
   vis('cyl', C.pole, x, 2.5, z, 0.12, 5, 0.12);
   vis('box', 0x3b3b3b, x + 0.4, 4.95, z, 0.9, 0.12, 0.25);
 }
-function flag(x, z, color) {             // Teamfahne (nur Optik)
+function flag(x, z, color) {             // Flagge / Objektiv-Markierung (nur Optik)
   vis('cyl', C.pole, x, 2.1, z, 0.1, 4.2, 0.1);
   vis('box', color, x + 0.6, 3.7, z, 1.2, 0.8, 0.05);
 }
+
+// Bereiche, in denen keine Zufallsgebaeude entstehen (Basen, Plaza)
+const RESERVED = [[-106, -54, -36, 36], [54, 106, -36, 36], [-18, 18, -18, 18]];
+// Objektive: Patrouillenziele fuer die Bots (und Flaggen auf der Karte)
+const OBJ = [
+  { x: 0, z: 0, c: 0xf2d04b }, { x: -40, z: -52, c: 0xf0f0f0 }, { x: 40, z: 52, c: 0xe0503a },
+  { x: -40, z: 52, c: 0x5aa0ff }, { x: 40, z: -52, c: 0x7adc6a }, { x: -76, z: 0, c: 0xd080ff },
+  { x: 76, z: 0, c: 0xffa040 }, { x: 0, z: -28, c: 0x40e0d0 }, { x: 0, z: 28, c: 0xffffff },
+];
+const mapRnd = mulberry32(2024);
+// Baublöcke zwischen den Strassen (Strassen: x = -40, 0, 40 und z = -42, 0, 42)
+const BLOCKS = [];
+for (const xr of [[-54, -44], [-36, -4], [4, 36], [44, 54]]) {
+  for (const zr of [[-66, -46], [-38, -4], [4, 38], [46, 66]]) BLOCKS.push([xr[0], xr[1], zr[0], zr[1]]);
+}
+function rectFree(x0, x1, z0, z1) {      // keine Kollision im Rechteck?
+  for (const b of solids) if (b.maxX > x0 && b.minX < x1 && b.maxZ > z0 && b.minZ < z1) return false;
+  return true;
+}
+function reservedHit(x0, x1, z0, z1) {
+  for (const [a, b, c, d] of RESERVED) if (x1 > a && x0 < b && z1 > c && z0 < d) return true;
+  return false;
+}
+// Versucht ein Gebaeude im Block zu setzen (zweistoeckig oder einstoeckig)
+function tryHouse(bx0, bx1, bz0, bz1, tries) {
+  for (let i = 0; i < tries; i++) {
+    const two = mapRnd() < 0.5;
+    const w = two ? 10 + mapRnd() * 3 : 7 + mapRnd() * 4;
+    const d = two ? 8 + mapRnd() * 2 : 6 + mapRnd() * 3;
+    if (bx1 - bx0 < w + 3 || bz1 - bz0 < d + 3) continue;
+    const x = lerp(bx0 + w / 2 + 1.5, bx1 - w / 2 - 1.5, mapRnd());
+    const z = lerp(bz0 + d / 2 + 1.5, bz1 - d / 2 - 1.5, mapRnd());
+    const m = 1.2;                          // Abstand zu Nachbarn
+    const x0 = x - w / 2 - m, x1 = x + w / 2 + m, z0 = z - d / 2 - m, z1 = z + d / 2 + m;
+    if (!rectFree(x0, x1, z0, z1) || reservedHit(x0, x1, z0, z1)) continue;
+    const doors = two ? ['n', 's', 'e'] : ['n', 's', 'e', 'w'];
+    const door = doors[Math.floor(mapRnd() * doors.length)];
+    const wall = [C.brick, C.wall, 0x8f8a7e, 0x7a6e60][Math.floor(mapRnd() * 4)];
+    if (two) house2(x, z, w, d, door, { wall, roof: C.roofDark });
+    else house(x, z, w, d, 3.2, wall, C.roofDark, door, { partition: mapRnd() < 0.5 });
+    return true;
+  }
+  return false;
+}
+// Kisten, Container, Deckung und Fahrzeuge in einem Block
+function fillBlock(bx0, bx1, bz0, bz1) {
+  const cols = [C.rust, C.olive, C.grey, C.grey2];
+  for (let i = 0; i < 20; i++) {
+    const x = lerp(bx0 + 2, bx1 - 2, mapRnd()), z = lerp(bz0 + 2, bz1 - 2, mapRnd());
+    const r = mapRnd();
+    if (r < 0.25 && rectFree(x - 3.2, x + 3.2, z - 3.2, z + 3.2) && !reservedHit(x - 3.2, x + 3.2, z - 3.2, z + 3.2)) {
+      container(x, z, mapRnd() < 0.5 ? 0 : 1, cols[Math.floor(mapRnd() * cols.length)]);
+    } else if (r < 0.45 && freeSpot(x, z, 2.2) && !reservedHit(x - 3, x + 3, z - 1, z + 1)) {
+      cover(x, z, 5, mapRnd() < 0.5 ? 0 : 1, C.jersey);
+    } else if (r < 0.65 && freeSpot(x, z, 1.8)) {
+      crate(x, z, 1.1 + mapRnd() * 0.8);
+    }
+  }
+}
+// Autos an den Strassen (als Deckung)
+function parkCars() {
+  const cols = [C.carRed, C.carWhite, C.carBlue, C.carGrey];
+  for (const x of [-40, 40]) for (let i = 0; i < 4; i++) {
+    const z = lerp(-58, 58, mapRnd());
+    if (freeSpot(x, z, 2.4)) car(x, z, 1, cols[Math.floor(mapRnd() * cols.length)]);
+  }
+  for (const z of [-42, 42]) for (let i = 0; i < 4; i++) {
+    const x = lerp(-50, 50, mapRnd());
+    if (freeSpot(x, z, 2.4)) car(x, z, 0, cols[Math.floor(mapRnd() * cols.length)]);
+  }
+}
+
+// Basis einer Seite (side -1 = ALPHA im Westen, +1 = BRAVO im Osten)
 const PAL = {
   alpha: { wall: 0x7b7f74, roof: 0x4b4f47, c1: 0x8a4a2a, c2: 0x4e5b3a, c3: 0x3e4c57, truck: 0x4e5b3a, team: ALPHA_COL },
   bravo: { wall: 0x857a6c, roof: 0x5a4a3c, c1: 0x3e4c57, c2: 0x8a4a2a, c3: 0x4e5b3a, truck: 0x6a5a3a, team: BRAVO_COL },
 };
-// Basis einer Seite (side -1 = ALPHA im Westen, +1 = BRAVO im Osten), spiegelbildlich aufgebaut
 function baseKit(side) {
   const s = side, p = side < 0 ? PAL.alpha : PAL.bravo;
-  house(s * 47, -17, 10, 7, 3.2, p.wall, p.roof, side < 0 ? 'e' : 'w');
-  container(s * 54, -6, 1, p.c1);
-  container(s * 54, 6, 1, p.c2);
-  container(s * 54, -6, 1, p.c3, 2.6);
-  cover(s * 39, -8, 8, 1, C.sand);
-  cover(s * 39, 8, 8, 1, C.sand);
-  cover(s * 44, -24, 8, 0, C.hesco);
-  cover(s * 44, 24, 8, 0, C.hesco);
-  truck(s * 52, 24, 0, p.truck);
-  flag(s * 44.5, -4, p.team);
-  for (let i = 0; i < 3; i++) solid(s * 42.5, 4 + i, 0.9, 1.0, 0.9, C.barrel);
+  house2(s * 88, -16, 12, 9, 's', { wall: p.wall, roof: p.roof });     // Kaserne
+  container(s * 100, 6, 1, p.c1);
+  container(s * 100, 12, 1, p.c2);
+  container(s * 78, -26, 0, p.c3);
+  container(s * 78, -26, 0, p.c3, 2.6);
+  container(s * 94, 24, 0, p.c2);
+  truck(s * 80, 18, 0, p.truck);
+  cover(s * 70, -10, 8, 1, C.sand);
+  cover(s * 70, 10, 8, 1, C.sand);
+  cover(s * 72, -32, 8, 0, C.hesco);
+  cover(s * 72, 32, 8, 0, C.hesco);
+  flag(s * 84, -3, p.team);
+  for (let i = 0; i < 3; i++) solid(s * 84, 6 + i * 1.0, 0.9, 1.0, 0.9, C.barrel);
 }
 
 function buildMap() {
-  // Strassen, Gehwege und Markierungen (nur Optik, liegen im flachen Stadtkern)
-  vis('box', C.asphalt, 0, 0.03, 0, 6, 0.06, CORE_Z * 2);
-  vis('box', C.asphalt, 0, 0.03, 0, CORE_X * 2, 0.06, 6);
-  for (const sg of [-1, 1]) {
-    vis('box', C.sidewalk, sg * 4.3, 0.06, 0, 1.4, 0.12, CORE_Z * 2);
-    vis('box', C.sidewalk, 0, 0.06, sg * 4.3, CORE_X * 2, 0.12, 1.4);
-  }
-  for (let z = -36; z <= 36; z += 6) if (Math.abs(z) > 4) vis('box', C.paint, 0, 0.09, z, 0.25, 0.02, 2.6);
-  for (let x = -54; x <= 54; x += 6) if (Math.abs(x) > 4) vis('box', C.paint, x, 0.09, 0, 2.6, 0.02, 0.25);
+  // Begrenzung
+  solid(0, -MAP_Z, MAP_X * 2 + 2, 3, 1, C.wall);
+  solid(0, MAP_Z, MAP_X * 2 + 2, 3, 1, C.wall);
+  solid(-MAP_X, 0, 1, 3, MAP_Z * 2 + 2, C.wall);
+  solid(MAP_X, 0, 1, 3, MAP_Z * 2 + 2, C.wall);
 
+  // Strassen, Mittellinien und Plaza (nur Optik)
+  vis('box', C.asphalt, 0, 0.03, 0, 8, 0.06, CORE_Z * 2);
+  vis('box', C.asphalt, 0, 0.03, 0, CORE_X * 2, 0.06, 8);
+  for (const x of [-40, 40]) vis('box', C.asphalt, x, 0.03, 0, 8, 0.06, CORE_Z * 2);
+  for (const z of [-42, 42]) vis('box', C.asphalt, 0, 0.03, z, CORE_X * 2, 0.06, 8);
+  for (let z = -60; z <= 60; z += 8) if (Math.abs(z) > 6) vis('box', C.paint, 0, 0.09, z, 0.25, 0.02, 3);
+  for (let x = -100; x <= 100; x += 8) if (Math.abs(x) > 6) vis('box', C.paint, x, 0.09, 0, 3, 0.02, 0.25);
+  vis('box', C.concrete, 0, 0.05, 0, 34, 0.08, 34);
+
+  // Basen
   baseKit(-1);
   baseKit(1);
 
-  // Gebaeude im Stadtkern
-  house(12, -16, 10, 7, 3.2, C.brick, C.roofDark, 'w', { partition: true });
-  house(-10, 18, 12, 8, 3.2, C.wall, C.roofDark, 'e', { partition: true, stairs: 'n' });
-  house(26, 20, 9, 7, 3.2, C.brick, C.roofDark, 'n');
-  house(-28, -30, 9, 6, 3.2, C.wall, C.roofDark, 's', { partition: true });
-  house(30, -28, 10, 8, 3.2, C.brick, C.roofDark, 'w', { stairs: 'e' });
-  watchtower(-22, 12, -1);
-  watchtower(22, -12, 1);
+  // Plaza: vier zweigeschossige Haeuser, Brunnen, Deckung
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    house2(sx * 26, sz * 26, 12, 10, sz > 0 ? 'n' : 's', { wall: C.brick, roof: C.roofDark });
+  }
+  solid(0, 0, 4, 0.7, 4, C.concreteDark);
+  cover(-11, 0, 4, 1, C.sand);
+  cover(11, 0, 4, 1, C.sand);
+  cover(0, -11, 4, 0, C.sand);
+  cover(0, 11, 4, 0, C.sand);
 
-  // Container-Hoefe
-  container(-30, 30, 0, C.rust);
-  container(-30, 30, 0, C.olive, 2.6);
-  container(-24, 36, 1, C.grey);
-  container(30, -30, 0, C.olive);
-  container(30, -30, 0, C.rust, 2.6);
-  container(24, -36, 1, C.grey2);
+  // Wachtuerme in den Ecken (Scharfschuetzen-Sicht)
+  watchtower(-56, 52, 1);
+  watchtower(56, -52, -1);
 
-  // Fahrzeuge am Strassenrand
-  car(-7, -12, 1, C.carRed);
-  car(7, 16, 1, C.carWhite);
-  car(-7, 30, 1, C.carBlue);
-  car(7, -32, 1, C.carGrey);
-  car(-24, -5.6, 0, C.carWhite);
-  car(20, 5.6, 0, C.carRed);
-  truck(-30, 6, 0, C.truckGrey);
-  bus(-14, -24, 0, C.bus);
+  // Zufallsgebaeude und Kisten in den Bloecken
+  for (const [x0, x1, z0, z1] of BLOCKS) {
+    let placed = 0;
+    const want = 2 + Math.floor(mapRnd() * 3);
+    for (let k = 0; k < 8 && placed < want; k++) if (tryHouse(x0, x1, z0, z1, 10)) placed++;
+    fillBlock(x0, x1, z0, z1);
+  }
+  parkCars();
 
-  // Deckung: Sandsaecke, Hesco, Betonsperren
-  cover(-10, 3, 6, 1, C.sand);
-  cover(10, -3, 6, 1, C.sand);
-  cover(-16, -10, 5, 0, C.hesco);
-  cover(16, 10, 5, 0, C.hesco);
-  cover(0, -22, 6, 1, C.hesco);
-  cover(0, 22, 6, 1, C.hesco);
-  cover(-26, 28, 6, 0, C.jersey);
-  cover(14, -28, 6, 0, C.jersey);
-  cover(-26, -18, 6, 0, C.jersey);
-  cover(26, 12, 6, 0, C.jersey);
+  // Objektiv-Flaggen
+  for (const o of OBJ) flag(o.x, o.z, o.c);
 
-  // Kisten
-  crate(-4, -7, 1.2); crate(-2.6, -7.2, 1.2); crate(4, 6, 1.2); crate(2, -9, 1.4);
-  crate(-40, 14, 1.2); crate(40, -14, 1.2); crate(-38, 36, 1.4); crate(38, -36, 1.4);
-
-  // Laternen entlang der Strassen (nur wo frei)
-  for (let x = -50; x <= 50; x += 12) {
+  // Laternen an den Strassen (nur wo frei)
+  for (let x = -100; x <= 100; x += 14) {
     if (freeSpot(x, -4.8, 0.6)) lamp(x, -4.8);
     if (freeSpot(x, 4.8, 0.6)) lamp(x, 4.8);
   }
-  for (let z = -36; z <= 36; z += 12) {
+  for (let z = -60; z <= 60; z += 14) {
     if (freeSpot(-4.8, z, 0.6)) lamp(-4.8, z);
     if (freeSpot(4.8, z, 0.6)) lamp(4.8, z);
   }
 
-  // Natur: Baeume und Felsen (ohne Kollision), im Stadtkern nur in den Parks, draussen auf den Huegeln
-  const rnd = mulberry32(99);
-  for (let i = 0; i < 340; i++) {
-    const x = (rnd() * 2 - 1) * (MAP_X - 2), z = (rnd() * 2 - 1) * (MAP_Z - 2);
+  // Natur: Baeume und Felsen, im Stadtkern nur in den Parks, draussen auf den Huegeln
+  for (let i = 0; i < 520; i++) {
+    const x = (mapRnd() * 2 - 1) * (MAP_X - 2), z = (mapRnd() * 2 - 1) * (MAP_Z - 2);
     const inCore = Math.abs(x) < CORE_X - 1 && Math.abs(z) < CORE_Z - 1;
     if (inCore && !inPark(x, z)) continue;
     if (!freeSpot(x, z, 1.6)) continue;
     const gy = groundAt(x, z);
-    if (rnd() < 0.72) tree(x, z, gy, 0.8 + rnd() * 0.6, rnd);
-    else rock(x, z, gy, 0.6 + rnd() * 0.8);
+    if (mapRnd() < 0.72) tree(x, z, gy, 0.8 + mapRnd() * 0.6, mapRnd);
+    else rock(x, z, gy, 0.6 + mapRnd() * 0.8);
   }
   for (const [px, pz, r] of PARKS) {
-    for (let i = 0; i < 6; i++) {
-      const a = rnd() * Math.PI * 2, d = rnd() * (r - 1.5);
+    for (let i = 0; i < 8; i++) {
+      const a = mapRnd() * Math.PI * 2, d = mapRnd() * (r - 1.5);
       const x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d;
-      if (freeSpot(x, z, 1.2)) tree(x, z, 0, 1.0 + rnd() * 0.4, rnd);
+      if (freeSpot(x, z, 1.2)) tree(x, z, 0, 1.0 + mapRnd() * 0.4, mapRnd);
     }
   }
   flushVisuals();
@@ -1139,6 +1273,333 @@ function fireShot() {
   }
 }
 
+// ===================== Navigation fuer die Bots (Raster + A*) =====================
+const NAV_CELL = 2;
+const NAV_W = Math.ceil(MAP_X * 2 / NAV_CELL), NAV_H = Math.ceil(MAP_Z * 2 / NAV_CELL);
+const navWalk = new Uint8Array(NAV_W * NAV_H);
+
+// Zellen, die am Boden (Koerperhoehe) blockiert sind. Decken und Obergeschosse zaehlen nicht.
+function navBuild() {
+  navWalk.fill(1);
+  const r = 0.6;
+  for (const b of solids) {
+    if (b.minY > 1.7) continue;
+    const i0 = Math.max(0, Math.floor((b.minX - r + MAP_X) / NAV_CELL));
+    const i1 = Math.min(NAV_W - 1, Math.floor((b.maxX + r + MAP_X) / NAV_CELL));
+    const j0 = Math.max(0, Math.floor((b.minZ - r + MAP_Z) / NAV_CELL));
+    const j1 = Math.min(NAV_H - 1, Math.floor((b.maxZ + r + MAP_Z) / NAV_CELL));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) navWalk[j * NAV_W + i] = 0;
+  }
+}
+function worldToCell(x, z) {
+  return {
+    ix: clamp(Math.floor((x + MAP_X) / NAV_CELL), 0, NAV_W - 1),
+    iz: clamp(Math.floor((z + MAP_Z) / NAV_CELL), 0, NAV_H - 1),
+  };
+}
+function cellCenter(ix, iz) {
+  return { x: -MAP_X + (ix + 0.5) * NAV_CELL, z: -MAP_Z + (iz + 0.5) * NAV_CELL };
+}
+function nearestWalkable(ix, iz) {
+  for (let r = 0; r <= 4; r++) {
+    for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+      const x = ix + dx, z = iz + dz;
+      if (x >= 0 && z >= 0 && x < NAV_W && z < NAV_H && navWalk[z * NAV_W + x]) return { ix: x, iz: z };
+    }
+  }
+  return null;
+}
+// Weg von (sx,sz) nach (gx,gz) als Liste von Weltpunkten (Zellmitten). null, wenn kein Weg.
+function findPath(sx, sz, gx, gz) {
+  const s0 = worldToCell(sx, sz), g0 = worldToCell(gx, gz);
+  const s = nearestWalkable(s0.ix, s0.iz), g = nearestWalkable(g0.ix, g0.iz);
+  if (!s || !g) return null;
+  const N = NAV_W * NAV_H;
+  const start = s.iz * NAV_W + s.ix, goal = g.iz * NAV_W + g.ix;
+  if (start === goal) return [cellCenter(g.ix, g.iz)];
+  const gCost = new Float32Array(N).fill(Infinity);
+  const came = new Int32Array(N).fill(-1);
+  const closed = new Uint8Array(N);
+  const hF = [], hI = [];                          // Min-Heap: Schaetzwert und Zellindex
+  const hPush = (f, i) => {
+    hF.push(f); hI.push(i);
+    let k = hF.length - 1;
+    while (k > 0) {
+      const p = (k - 1) >> 1;
+      if (hF[p] <= hF[k]) break;
+      [hF[p], hF[k]] = [hF[k], hF[p]]; [hI[p], hI[k]] = [hI[k], hI[p]];
+      k = p;
+    }
+  };
+  const hPop = () => {
+    const top = hI[0];
+    const lf = hF.pop(), li = hI.pop();
+    if (hI.length) {
+      hF[0] = lf; hI[0] = li;
+      let k = 0;
+      for (;;) {
+        const l = 2 * k + 1, r = l + 1;
+        let m = k;
+        if (l < hI.length && hF[l] < hF[m]) m = l;
+        if (r < hI.length && hF[r] < hF[m]) m = r;
+        if (m === k) break;
+        [hF[m], hF[k]] = [hF[k], hF[m]]; [hI[m], hI[k]] = [hI[k], hI[m]];
+        k = m;
+      }
+    }
+    return top;
+  };
+  const gi = goal % NAV_W, gj = (goal / NAV_W) | 0;
+  gCost[start] = 0;
+  hPush(0, start);
+  let iter = 0;
+  while (hI.length && iter++ < 16000) {
+    const cur = hPop();
+    if (cur === goal) break;
+    if (closed[cur]) continue;
+    closed[cur] = 1;
+    const ci = cur % NAV_W, cj = (cur / NAV_W) | 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue;
+      const ni = ci + di, nj = cj + dj;
+      if (ni < 0 || nj < 0 || ni >= NAV_W || nj >= NAV_H) continue;
+      const n = nj * NAV_W + ni;
+      if (!navWalk[n] || closed[n]) continue;
+      if (di && dj && (!navWalk[cj * NAV_W + ni] || !navWalk[nj * NAV_W + ci])) continue;   // keine Ecken schneiden
+      const ng = gCost[cur] + (di && dj ? 1.414 : 1);
+      if (ng < gCost[n]) {
+        gCost[n] = ng;
+        came[n] = cur;
+        const ddx = Math.abs(ni - gi), ddz = Math.abs(nj - gj);
+        hPush(ng + Math.max(ddx, ddz) + 0.414 * Math.min(ddx, ddz), n);
+      }
+    }
+  }
+  if (came[goal] < 0) return null;
+  const path = [];
+  let c = goal;
+  while (c !== -1 && c !== start) {
+    path.push(cellCenter(c % NAV_W, (c / NAV_W) | 0));
+    c = came[c];
+  }
+  path.reverse();
+  return path;
+}
+
+// ===================== Drohne (FPV) mit VHS-Bild =====================
+// Die Drohne fliegt in 2.2 m Hoehe. Stick = fliegen, Blick = Kamera drehen, FEUER = langsamer Schuss,
+// CRASH = Sturzflug in die Blickrichtung, bei Einschlag 1 Treffer (toetet Gegner im Umkreis).
+const DRONE = {
+  active: false, x: 0, y: 2.2, z: 0, yaw: 0, pitch: 0, vx: 0, vz: 0,
+  hp: 25, battery: 45, fireCd: 0, crashing: false, crashT: 0, cooldown: 0,
+};
+const vhsEl = $('vhs'), vhsCanvas = $('vhsNoise'), vhsCtx = vhsCanvas.getContext('2d');
+const recEl = $('recTxt');
+let vhsLast = 0;
+
+function setVhs(on) {
+  vhsEl.classList.toggle('on', on);
+  canvas.style.filter = on ? 'saturate(0.55) contrast(1.18) brightness(0.92) hue-rotate(-10deg)' : '';
+}
+// Rauschen fuer das VHS-Bild (alle 70 ms neu)
+function drawVhs(now) {
+  if (now - vhsLast < 70) return;
+  vhsLast = now;
+  const img = vhsCtx.createImageData(vhsCanvas.width, vhsCanvas.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = Math.random() * 255;
+    d[i] = v; d[i + 1] = v; d[i + 2] = v;
+    d[i + 3] = 255 * (0.25 + Math.random() * 0.5);
+  }
+  vhsCtx.putImageData(img, 0, 0);
+  recEl.textContent = `● REC  AKKU ${Math.max(0, Math.ceil(DRONE.battery))} s`;
+}
+
+function droneLaunch() {
+  if (DRONE.active || DRONE.cooldown > 0 || player.dead) return;
+  const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
+  DRONE.x = player.x - sy * 1.6;               // 1.6 m vor dem Spieler starten
+  DRONE.z = player.z - cy * 1.6;
+  if (!freeSpot(DRONE.x, DRONE.z, 0.35)) { DRONE.x = player.x; DRONE.z = player.z; }   // nicht in einer Wand starten
+  DRONE.y = groundAt(DRONE.x, DRONE.z) + 2.2;
+  DRONE.yaw = player.yaw;
+  DRONE.pitch = 0;
+  DRONE.hp = 25;
+  DRONE.battery = 45;
+  DRONE.crashing = false;
+  DRONE.crashT = 0;
+  DRONE.fireCd = 0;
+  DRONE.active = true;
+  aimOn = false;
+  setVhs(true);
+}
+function droneEnd() {
+  DRONE.active = false;
+  DRONE.crashing = false;
+  DRONE.cooldown = 8;
+  setVhs(false);
+}
+function droneCrash() {
+  if (!DRONE.active || DRONE.crashing) return;
+  DRONE.crashing = true;
+  DRONE.crashT = 4;
+}
+// Bewegung und Kollision (Drohne = Punkt mit Radius 0.3)
+function updateDrone(dt, mx, mz) {
+  if (!DRONE.active) return;
+  DRONE.battery -= dt;
+  DRONE.fireCd -= dt;
+  if (DRONE.battery <= 0) { droneEnd(); return; }
+  if (DRONE.crashing) {
+    DRONE.crashT -= dt;
+    DRONE.vx = -Math.sin(DRONE.yaw) * 26;
+    DRONE.vz = -Math.cos(DRONE.yaw) * 26;
+    if (DRONE.crashT <= 0) { blast(DRONE.x, DRONE.y, DRONE.z, 3.4, 999, 20, 'crash'); droneEnd(); return; }
+  } else {
+    const sp = 9;
+    DRONE.vx = (-Math.sin(DRONE.yaw) * mz + Math.cos(DRONE.yaw) * mx) * sp;
+    DRONE.vz = (-Math.cos(DRONE.yaw) * mz - Math.sin(DRONE.yaw) * mx) * sp;
+  }
+  const nx = DRONE.x + DRONE.vx * dt, nz = DRONE.z + DRONE.vz * dt;
+  const hy = DRONE.y;
+  let blocked = false;
+  for (const b of solids) {
+    if (b.minY > hy + 0.4 || b.maxY < hy - 0.4) continue;
+    if (circleTouches(nx, nz, 0.3, b)) { blocked = true; break; }
+  }
+  if (blocked) {
+    if (DRONE.crashing) { blast(nx, hy, nz, 3.4, 999, 20, 'crash'); droneEnd(); return; }
+    DRONE.vx = 0; DRONE.vz = 0;
+  } else {
+    DRONE.x = nx; DRONE.z = nz;
+  }
+  DRONE.y = groundAt(DRONE.x, DRONE.z) + 2.2;
+  if (DRONE.crashing) {
+    for (const b of bots) {
+      if (b.alive && Math.hypot(b.x - DRONE.x, b.z - DRONE.z) < 1.2) {
+        blast(DRONE.x, DRONE.y, DRONE.z, 3.4, 999, 20, 'crash');
+        droneEnd();
+        return;
+      }
+    }
+  }
+  DRONE.pitch = clamp(DRONE.pitch, -1.2, 1.2);
+}
+// Langsamer Schuss der Drohne: 2 Schuss pro Sekunde, wenig Schaden
+function droneFire() {
+  if (DRONE.fireCd > 0 || !DRONE.active) return;
+  DRONE.fireCd = 0.45;
+  const cp = Math.cos(DRONE.pitch);
+  const dx = -Math.sin(DRONE.yaw) * cp, dy = Math.sin(DRONE.pitch), dz = -Math.cos(DRONE.yaw) * cp;
+  const ox = DRONE.x, oy = DRONE.y, oz = DRONE.z;
+  const hw = rayWorld(ox, oy, oz, dx, dy, dz);
+  const tWorld = Math.min(hw.t, rayTerrain(ox, oy, oz, dx, dy, dz, Number.isFinite(hw.t) ? hw.t : 200));
+  const hb = rayBots(ox, oy, oz, dx, dy, dz, tWorld);
+  const hit = hb.bot !== null && hb.t < tWorld;
+  const endT = hit ? hb.t : (Number.isFinite(tWorld) ? tWorld : 200);
+  tracer(new THREE.Vector3(ox + dx * 0.4, oy + dy * 0.4, oz + dz * 0.4),
+         new THREE.Vector3(ox + dx * endT, oy + dy * endT, oz + dz * endT), MAT.tracerA);
+  if (hit) { hitT = 0.15; damageBot(hb.bot, 8 * (hb.head ? 2 : 1)); }
+}
+// Schaden an der Drohne (von Bots): bei 0 Explosion (klein) und Ende
+function damageDrone(d) {
+  if (!DRONE.active) return;
+  DRONE.hp -= d;
+  if (DRONE.hp <= 0) { blast(DRONE.x, DRONE.y, DRONE.z, 2.2, 40, 10, 'drone'); droneEnd(); }
+}
+
+// ===================== Granaten (Spieler und Bots) =====================
+const GREN_G = 9.8;
+const grenades = [];
+let grenadesLeft = 3;
+const grenMat = mat(0x3d4a2c, 0.6, 0.2);
+const ringMat = new THREE.MeshBasicMaterial({ color: 0xffa020, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+const boomMat = new THREE.MeshBasicMaterial({ color: 0xffb040, transparent: true, opacity: 0.8 });
+
+// owner: 'player' | 'bot' ; ring = Landemarkierung (nur bei Bot-Granaten)
+function spawnGrenade(x, y, z, vx, vy, vz, owner, tx = null, tz = null) {
+  const m = new THREE.Mesh(sphGeo(0.09), grenMat);
+  m.castShadow = true;
+  scene.add(m);
+  let ring = null;
+  if (tx !== null) {
+    ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.25, 28), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(tx, groundAt(tx, tz) + 0.05, tz);
+    scene.add(ring);
+  }
+  grenades.push({ m, ring, x, y, z, vx, vy, vz, fuse: 2.6, owner });
+}
+// Spieler wirft in Blickrichtung
+function throwPlayerGrenade() {
+  if (grenadesLeft <= 0 || DRONE.active || player.dead) return;
+  grenadesLeft--;
+  camera.getWorldDirection(_fwd);
+  const v = 15;
+  spawnGrenade(camera.position.x, camera.position.y - 0.1, camera.position.z,
+               _fwd.x * v, _fwd.y * v + 4.5, _fwd.z * v, 'player');
+}
+// Bot wirft auf einen Punkt (ballistische Berechnung, Flugzeit T)
+function throwBotGrenade(b, tx, tz) {
+  b.grenCd = 16 + Math.random() * 8;
+  const T = 1.6;
+  const ox = b.x, oy = groundAt(b.x, b.z) + 1.6, oz = b.z;
+  const ty = groundAt(tx, tz) + 0.05;
+  const vx = (tx - ox) / T, vz = (tz - oz) / T;
+  const vy = (ty - oy + 0.5 * GREN_G * T * T) / T;
+  spawnGrenade(ox, oy, oz, vx, vy, vz, 'bot', tx, tz);
+  addIndicator({ x: b.x, z: b.z }, 'gren');     // Pfeil zur Quelle
+}
+// Explosion: Schaden an gegnerischen Bots und am Spieler im Radius (mit Abfall nach aussen)
+function blast(x, y, z, radius, botDmg, playerDmg, owner) {
+  for (const b of bots) {
+    if (!b.alive || !b.enemy) continue;
+    const d = Math.hypot(b.x - x, b.z - z);
+    if (d >= radius) continue;
+    if (botDmg >= 999) damageBot(b, 999);
+    else damageBot(b, botDmg * Math.pow(1 - d / radius, 1.2));
+  }
+  if (playerDmg > 0 && !player.dead) {
+    const d = Math.hypot(player.x - x, (player.y + 0.9) - y, player.z - z);
+    if (d < radius) damagePlayer(playerDmg * (1 - d / radius));
+  }
+  const m = new THREE.Mesh(sphGeo(1), boomMat);
+  m.position.set(x, y, z);
+  m.scale.setScalar(radius * 0.5);
+  addEffect(m, 0.25, false);
+  dustAt(new THREE.Vector3(x, Math.max(0.1, y - 0.5), z));
+}
+function updateGrenades(dt) {
+  for (let i = grenades.length - 1; i >= 0; i--) {
+    const g = grenades[i];
+    g.fuse -= dt;
+    g.vy -= GREN_G * dt;
+    g.x += g.vx * dt;
+    g.y += g.vy * dt;
+    g.z += g.vz * dt;
+    let boom = g.fuse <= 0 || g.y <= groundAt(g.x, g.z) + 0.05 || insideSolid(g.x, g.y, g.z);
+    if (boom) {
+      const gy = groundAt(g.x, g.z);
+      const by = Math.max(g.y, gy + 0.1);
+      if (g.owner === 'player') blast(g.x, by, g.z, 5.5, 130, 0, 'player');
+      else blast(g.x, by, g.z, 5.5, 0, 100, 'bot');
+      scene.remove(g.m);
+      if (g.ring) scene.remove(g.ring);
+      grenades.splice(i, 1);
+    } else {
+      g.m.position.set(g.x, g.y, g.z);
+      g.m.rotation.x += dt * 8;
+    }
+  }
+}
+function resetGrenades() {
+  for (const g of grenades) { scene.remove(g.m); if (g.ring) scene.remove(g.ring); }
+  grenades.length = 0;
+  grenadesLeft = 3;
+}
+
 // ===================== Physik des Spielers =====================
 // vx, vz = Geschwindigkeit (m/s), bereits mit Haltung skaliert
 function updatePlayerPhysics(dt, vx, vz) {
@@ -1188,14 +1649,21 @@ function toggleStance(which) {         // 1 = ducken, 2 = liegen; nochmal drueck
   player.poseTarget = player.poseTarget === which ? 0 : which;
 }
 
+// ===================== Richtungspfeile (Quelle: Schuetze oder Granate) =====================
+const dmgList = [];
+function addIndicator(src, kind, life = 2.5) {
+  dmgList.push({ src, kind, life });
+  if (dmgList.length > 6) dmgList.shift();
+}
+function showIndicator(b) {
+  const e = dmgList.find(d => d.src === b && d.kind === 'shot');
+  if (e) e.life = 2.5;
+  else addIndicator(b, 'shot');
+}
+
 // ===================== Bots (Gegner und Teamkameraden) =====================
 let bots = [];
-const dmgList = [];                    // Richtungspfeile: wer hat auf dich geschossen
-function showIndicator(b) {
-  const e = dmgList.find(d => d.bot === b);
-  if (e) e.life = 2.5;
-  else { dmgList.push({ bot: b, life: 2.5 }); if (dmgList.length > 6) dmgList.shift(); }
-}
+const BOT_POSE = 1.6;
 function pickSpot(zone, avoid = null, tries = 40) {
   for (let i = 0; i < tries; i++) {
     const x = lerp(zone[0], zone[1], Math.random()), z = lerp(zone[2], zone[3], Math.random());
@@ -1204,13 +1672,16 @@ function pickSpot(zone, avoid = null, tries = 40) {
   }
   return { x: (zone[0] + zone[1]) / 2, z: (zone[2] + zone[3]) / 2 };
 }
-function pickWaypoint(b) {
-  const xr = b.enemy ? [-56, 56] : (b.team === 'alpha' ? [-56, -4] : [4, 56]);
-  for (let i = 0; i < 30; i++) {
-    const x = lerp(xr[0], xr[1], Math.random()), z = lerp(-34, 34, Math.random());
-    if (freeSpot(x, z, 0.7)) { b.wpx = x; b.wpz = z; break; }
+// Naechstes Ziel-Objektiv: Gegner greifen an, Teamkameraden bleiben auf der eigenen Seite
+function pickObjective(b) {
+  const cand = [];
+  for (let i = 0; i < OBJ.length; i++) {
+    if (i === b.obj) continue;
+    const o = OBJ[i];
+    const ok = b.enemy ? (b.team === 'bravo' ? o.x < 40 : o.x > -40) : (b.team === 'alpha' ? o.x <= 20 : o.x >= -20);
+    if (ok) cand.push(i);
   }
-  b.wpT = 8;
+  return cand.length ? cand[Math.floor(Math.random() * cand.length)] : 0;
 }
 function makeBot(botTeam, enemy) {
   const pool = enemy ? ['m4', 'ak', 'mp5', 'scar'] : ['m4', 'scar', 'mp5'];
@@ -1220,18 +1691,24 @@ function makeBot(botTeam, enemy) {
   const spawn = pickSpot(ZONE[botTeam], SPAWN[botTeam]);
   const b = {
     rig, team: botTeam, enemy, weapon: wid, x: spawn.x, z: spawn.z, y: 0, yaw: 0,
-    hp: 100, alive: true, respawn: 0, alert: 0, shootCd: 1 + Math.random(),
-    wpx: spawn.x, wpz: spawn.z, wpT: 0, moving: false,
+    hp: 100, alive: true, respawn: 0,
+    obj: 0, objT: 0, path: [], pIdx: 0, repathT: 0, goalX: NaN, goalZ: NaN,
+    seen: false, lastX: spawn.x, lastZ: spawn.z, lastT: -99, reactT: 0,
+    mode: 'patrol', coverX: NaN, coverZ: NaN, coverUntil: 0,
+    burst: 0, shootCd: 1 + Math.random(), grenCd: 6 + Math.random() * 8,
+    stuckT: 0, stuckX: spawn.x, stuckZ: spawn.z, moving: false,
   };
-  pickWaypoint(b);
+  b.obj = pickObjective(b);
+  rig.root.position.set(b.x, groundAt(b.x, b.z), b.z);
   return b;
 }
 function placeBot(b) {
   const s = pickSpot(ZONE[b.team], SPAWN[b.team]);
-  b.x = s.x; b.z = s.z; b.hp = 100; b.alive = true; b.alert = 0; b.shootCd = 1;
+  b.x = s.x; b.z = s.z; b.hp = 100; b.alive = true;
+  b.seen = false; b.mode = 'patrol'; b.path = []; b.shootCd = 1; b.grenCd = 10 + Math.random() * 6;
+  b.stuckX = b.x; b.stuckZ = b.z;
   b.rig.root.position.set(b.x, groundAt(b.x, b.z), b.z);
   b.rig.root.rotation.set(0, b.yaw, 0);
-  pickWaypoint(b);
 }
 function damageBot(b, dmg) {
   if (!b.alive) return;
@@ -1244,55 +1721,155 @@ function damageBot(b, dmg) {
     b.rig.root.position.y = groundAt(b.x, b.z) + 0.12;
   }
 }
+// Deckungspunkt: Zelle in der Naehe, die von der Position des Spielers aus nicht zu sehen ist
+function findCover(b, pEye) {
+  const c0 = worldToCell(b.x, b.z);
+  let best = null, bestD = Infinity;
+  for (let dz = -5; dz <= 5; dz++) for (let dx = -5; dx <= 5; dx++) {
+    const ix = c0.ix + dx, iz = c0.iz + dz;
+    if (ix < 0 || iz < 0 || ix >= NAV_W || iz >= NAV_H || !navWalk[iz * NAV_W + ix]) continue;
+    const c = cellCenter(ix, iz);
+    const d = Math.hypot(c.x - b.x, c.z - b.z);
+    if (d > 10 || d >= bestD) continue;
+    if (Math.hypot(c.x - player.x, c.z - player.z) < 8) continue;
+    if (!losClear(player.x, pEye, player.z, c.x, 1.0, c.z)) { best = c; bestD = d; }
+  }
+  return best;
+}
 function botShoot(b, dist) {
-  b.shootCd = 0.8 + Math.random() * 0.6;
   const gy = groundAt(b.x, b.z);
   const ox = b.x - Math.sin(b.yaw) * 0.7, oz = b.z - Math.cos(b.yaw) * 0.7;
   const py = player.y + lerpPose(POSE_PIVOT, player.pose);
-  const tx = player.x + (Math.random() - 0.5) * 0.7, ty = py + (Math.random() - 0.5) * 0.5, tz = player.z + (Math.random() - 0.5) * 0.7;
+  const spread = 0.3 + dist * 0.012;                       // Streuung waechst mit der Entfernung
+  const tx = player.x + (Math.random() - 0.5) * spread;
+  const ty = py + (Math.random() - 0.5) * spread * 0.8;
+  const tz = player.z + (Math.random() - 0.5) * spread;
   tracer(new THREE.Vector3(ox, gy + 1.35, oz), new THREE.Vector3(tx, ty, tz), MAT.tracerB);
-  showIndicator(b);                    // der Richtungspfeil zeigt, woher geschossen wird
-  const stance = player.pose < 0.5 ? 1 : (player.pose < 1.5 ? 0.7 : 0.45);   // in Deckung trifft seltener
-  const chance = clamp(0.5 - dist * 0.012, 0.08, 0.5) * stance;
-  if (Math.random() < chance) damagePlayer(12);
+  showIndicator(b);                                        // Richtungspfeil: von wo geschossen wird
+  const moveMul = Math.hypot(player.moveX, player.moveZ) > 0.2 ? 0.7 : 1;
+  const stance = player.pose < 0.5 ? 1 : (player.pose < 1.5 ? 0.75 : 0.5);
+  const chance = clamp(0.36 - dist * 0.006, 0.06, 0.36) * moveMul * stance;
+  if (Math.random() < chance) damagePlayer(10);
+}
+// Feuerstoss: 3 Schuss, dann kurze Pause
+function botFireTick(b, pd) {
+  if (b.burst <= 0) b.burst = 3;
+  b.burst--;
+  b.shootCd = b.burst > 0 ? 0.14 : 1.3 + Math.random() * 0.9;
+  botShoot(b, pd);
 }
 function updateBots(dt) {
-  const py = player.y + lerpPose(POSE_PIVOT, player.pose);
+  const pEye = player.y + lerpPose(POSE_PIVOT, player.pose);
   for (const b of bots) {
     if (!b.alive) {
       b.respawn -= dt;
       if (b.respawn <= 0) placeBot(b);
       continue;
     }
-    b.shootCd -= dt;
-    b.alert = Math.max(0, b.alert - dt);
+    b.shootCd -= dt; b.grenCd -= dt; b.repathT -= dt;
     const gy = groundAt(b.x, b.z);
+    const eyeY = gy + 1.5;
     const pdx = player.x - b.x, pdz = player.z - b.z, pd = Math.hypot(pdx, pdz) || 0.001;
-    const canSee = b.enemy && !player.dead && pd < 34 && losClear(b.x, gy + 1.5, b.z, player.x, py, player.z);
-    if (canSee) b.alert = 5;
 
-    let mx = 0, mz = 0, speed = 1.7, faceTarget = false;
-    if (b.enemy && b.alert > 0 && !player.dead) {
-      faceTarget = true;
-      const nx = pdx / pd, nz = pdz / pd;
-      if (pd > 16) { mx = nx; mz = nz; speed = 2.6; }                 // anruecken
-      else if (pd < 9) { mx = -nx; mz = -nz; speed = 2.0; }           // Abstand halten
-      else { mx = -nz * 0.7; mz = nx * 0.7; speed = 1.6; }            // seitlich bewegen
-      if (canSee && b.shootCd <= 0) botShoot(b, pd);
-    } else {
-      b.wpT -= dt;
-      const dwx = b.wpx - b.x, dwz = b.wpz - b.z, dw = Math.hypot(dwx, dwz);
-      if (dw < 0.8 || b.wpT <= 0) pickWaypoint(b);
-      else { mx = dwx / dw; mz = dwz / dw; }
+    // Wahrnehmung: Sichtlinie zum Spieler
+    const seeNow = b.enemy && !player.dead && pd < 75 && losClear(b.x, eyeY, b.z, player.x, pEye, player.z);
+    if (seeNow) {
+      if (!b.seen) { b.seen = true; b.reactT = 0.45 + Math.random() * 0.5; }
+      b.lastX = player.x; b.lastZ = player.z; b.lastT = gameTime;
+    } else if (b.seen && gameTime - b.lastT > 4) {
+      b.seen = false;
     }
+    if (b.seen) b.reactT -= dt;
+    const engaged = b.enemy && b.seen && b.reactT <= 0 && !player.dead;
+
+    // Drohne bekaempfen, wenn sie in Sicht ist
+    if (b.enemy && DRONE.active && b.shootCd <= 0 && Math.hypot(DRONE.x - b.x, DRONE.z - b.z) < 48 &&
+        losClear(b.x, eyeY, b.z, DRONE.x, DRONE.y, DRONE.z)) {
+      b.shootCd = 1.2 + Math.random() * 0.6;
+      if (Math.random() < 0.55) damageDrone(7);
+    }
+
+    // Verhalten: angreifen, Deckung, absuchen oder Patrouille
+    let goal = null, speed = 1.9, face = null;
+    const lowHp = b.hp < 45;
+    if (engaged && pd < 60) {
+      if (lowHp || (b.mode === 'cover' && gameTime < b.coverUntil)) {
+        if (b.mode !== 'cover') {
+          const c = findCover(b, pEye);
+          b.mode = 'cover';
+          b.coverX = c ? c.x : b.x; b.coverZ = c ? c.z : b.z;
+          b.coverUntil = gameTime + 3.5;
+        }
+        goal = { x: b.coverX, z: b.coverZ };
+        speed = 2.8;
+        face = { x: player.x, z: player.z };
+      } else {
+        b.mode = 'engage';
+        if (pd > 24) { goal = { x: player.x, z: player.z }; speed = 2.9; }
+        else if (pd < 12) { goal = { x: b.x - pdx / pd * 8, z: b.z - pdz / pd * 8 }; speed = 2.6; }   // Abstand halten
+        else { goal = { x: b.x - pdz / pd * 6, z: b.z + pdx / pd * 6 }; speed = 2.0; }                // seitlich
+        face = { x: player.x, z: player.z };
+      }
+    } else if (b.enemy && !player.dead && gameTime - b.lastT < 6) {
+      b.mode = 'search';                                    // letzte bekannte Position absuchen
+      goal = { x: b.lastX, z: b.lastZ };
+      speed = 2.4;
+    } else {
+      b.mode = 'patrol';                                    // zwischen den Objektiven patrouillieren
+      const o = OBJ[b.obj];
+      b.objT += dt;
+      const near = Math.hypot(o.x - b.x, o.z - b.z) < 6;
+      if ((near && b.objT > 4) || b.objT > 25) { b.obj = pickObjective(b); b.objT = 0; b.path = []; }
+      goal = { x: OBJ[b.obj].x, z: OBJ[b.obj].z };
+      speed = 1.9;
+    }
+
+    // Weg berechnen (neu bei Zielwechsel, Zeitablauf oder Haenger)
+    let reached = true;
+    if (goal) {
+      reached = Math.hypot(goal.x - b.x, goal.z - b.z) < 1.8;
+      const moved = Math.hypot(goal.x - b.goalX, goal.z - b.goalZ) > 2.5;
+      if (!reached && (b.path.length === 0 || b.repathT <= 0 || moved)) {
+        b.path = findPath(b.x, b.z, goal.x, goal.z) || [];
+        b.pIdx = 0;
+        b.repathT = 1.5;
+        b.goalX = goal.x; b.goalZ = goal.z;
+      }
+    }
+    let mx = 0, mz = 0;
+    if (goal && !reached) {
+      while (b.pIdx < b.path.length && Math.hypot(b.path[b.pIdx].x - b.x, b.path[b.pIdx].z - b.z) < 0.9) b.pIdx++;
+      const wp = b.pIdx < b.path.length ? b.path[b.pIdx] : goal;
+      const dx = wp.x - b.x, dz = wp.z - b.z, dd = Math.hypot(dx, dz) || 1;
+      mx = dx / dd; mz = dz / dd;
+    }
+    if (face) b.yaw = Math.atan2(-(face.x - b.x), -(face.z - b.z));
+    else if (mx || mz) b.yaw = Math.atan2(-mx, -mz);
 
     b.x = clamp(b.x + mx * speed * dt, -MAP_X + 2, MAP_X - 2);
     b.z = clamp(b.z + mz * speed * dt, -MAP_Z + 2, MAP_Z - 2);
     b.y = groundAt(b.x, b.z);
     resolveHorizontal(b, false);
     b.moving = mx !== 0 || mz !== 0;
-    if (faceTarget) b.yaw = Math.atan2(-pdx, -pdz);
-    else if (b.moving) b.yaw = Math.atan2(-mx, -mz);
+
+    // Haenger: nach 1.5 s ohne Bewegung neu planen
+    b.stuckT += dt;
+    if (b.stuckT > 1.5) {
+      if (b.moving && Math.hypot(b.x - b.stuckX, b.z - b.stuckZ) < 0.4) b.repathT = 0;
+      b.stuckX = b.x; b.stuckZ = b.z; b.stuckT = 0;
+    }
+
+    // Schiessen (nur mit Sicht), Granaten
+    if (engaged && seeNow && b.shootCd <= 0) botFireTick(b, pd);
+    if (b.enemy && b.grenCd <= 0 && !player.dead) {
+      const atSeen = b.seen && lowHp && pd < 22;
+      const atMemory = !b.seen && gameTime - b.lastT < 5 && Math.hypot(b.lastX - b.x, b.lastZ - b.z) < 22;
+      if ((atSeen || atMemory) && Math.random() < dt * 0.8) {
+        if (b.seen) throwBotGrenade(b, player.x, player.z);
+        else throwBotGrenade(b, b.lastX, b.lastZ);
+      }
+    }
+
     b.rig.root.position.set(b.x, groundAt(b.x, b.z), b.z);
     b.rig.root.rotation.set(0, b.yaw, 0);
     animateRig(b.rig, dt, b.moving, true, 0, 0);
@@ -1309,6 +1886,7 @@ function damagePlayer(d) {
     player.dead = true;
     player.deadT = 3;
     deaths++;
+    if (DRONE.active) droneEnd();
   }
 }
 function respawnPlayer() {
@@ -1321,6 +1899,7 @@ function respawnPlayer() {
   aimOn = false;
   resetAmmo();
   reloadT = 0;
+  grenadesLeft = 3;
 }
 // Neue Runde: Bots und Spieler neu aufstellen (Team bestimmt Spawn und Gegner)
 function resetMatch() {
@@ -1333,6 +1912,8 @@ function resetMatch() {
   playerRig = createRig(team === 'alpha' ? ALPHA_COL : BRAVO_COL, WEAPON_IDS, true);
   kills = 0; deaths = 0;
   dmgList.length = 0;
+  DRONE.active = false; DRONE.cooldown = 0; setVhs(false);
+  resetGrenades();
   respawnPlayer();
   currentSlot = Math.max(0, hotbar.findIndex(Boolean));
   applyWeaponVisibility();
@@ -1341,13 +1922,13 @@ function resetMatch() {
 // ===================== Bedienelemente und HUD (DOM) =====================
 const CTL = {
   stick: $('stickIdle'), jump: $('jump'), fire: $('fire'), aim: $('aim'), reload: $('reload'),
-  duck: $('duck'), prone: $('prone'), hotbar: $('hotbar'), view: $('view'),
+  duck: $('duck'), prone: $('prone'), gren: $('gren'), drone: $('drone'), crash: $('crash'),
+  hotbar: $('hotbar'), view: $('view'),
 };
-const CTL_HIT = ['jump', 'fire', 'aim', 'reload', 'duck', 'prone', 'hotbar', 'view'];
 const baseEl = $('base'), knobEl = $('knob'), idleEl = $('stickIdle');
 const hbHead = $('hbHead');
 const hbSlotEls = [...document.querySelectorAll('.hs')];
-const hudTeam = $('team'), hudScore = $('score'), hudHp = $('hpFill'), hudStance = $('stanceLbl');
+const hudTeam = $('team'), hudScore = $('score'), hudHp = $('hpFill'), hudStance = $('stanceLbl'), hudExtra = $('extraLbl');
 const crossEl = $('crosshair'), hurtEl = $('hurt'), scopeEl = $('scope');
 const deadEl = $('deadMsg'), respawnTxt = $('respawnTxt'), viewEl = $('view'), settingsBtn = $('settingsBtn');
 const dmgRoot = $('dmgRoot');
@@ -1375,6 +1956,7 @@ function toggleView() {
   thirdPerson = !thirdPerson;
   viewEl.textContent = thirdPerson ? 'Ansicht: 1. Person' : 'Ansicht: 3. Person';
 }
+function setText(el, s) { if (el.textContent !== s) el.textContent = s; }
 function updateHUD() {
   const id = curId();
   const head = id
@@ -1383,32 +1965,36 @@ function updateHUD() {
   const key = `${head}|${currentSlot}|${hotbar.join()}|${kills}|${deaths}|${team}`;
   if (key !== lastHud) {
     lastHud = key;
-    hbHead.textContent = head;
+    setText(hbHead, head);
     hbSlotEls.forEach((el, i) => {
       const w = hotbar[i] ? WEAPONS[hotbar[i]] : null;
-      el.textContent = w ? w.short : '–';
+      setText(el, w ? w.short : '–');
       el.classList.toggle('sel', i === currentSlot && !!w);
     });
-    hudTeam.textContent = team === 'alpha' ? 'Team ALPHA' : 'Team BRAVO';
+    setText(hudTeam, team === 'alpha' ? 'Team ALPHA' : 'Team BRAVO');
     hudTeam.style.color = team === 'alpha' ? '#8cb8ff' : '#ffb27a';
-    hudScore.textContent = `Kills ${kills} · Tode ${deaths}`;
+    setText(hudScore, `Kills ${kills} · Tode ${deaths}`);
   }
   const stanceName = player.poseTarget === 0 ? 'Stehend' : (player.poseTarget === 1 ? 'Geduckt' : 'Liegend');
-  const hs = `Haltung: ${stanceName} · Ziel: ${aimOn ? 'AN' : 'AUS'}`;
-  if (hudStance.textContent !== hs) hudStance.textContent = hs;
+  setText(hudStance, `Haltung: ${stanceName} · Ziel: ${aimOn ? 'AN' : 'AUS'}`);
+  setText(hudExtra, `Granaten ${grenadesLeft} · Drohne ${DRONE.active ? 'AKTIV' : (DRONE.cooldown > 0 ? 'lädt ' + Math.ceil(DRONE.cooldown) + ' s' : 'bereit')}`);
+  setText(CTL.drone, DRONE.active ? 'ZURÜCK' : 'DROHNE');
+  setText(CTL.gren, `GRANATE ${grenadesLeft}`);
+  CTL.crash.style.opacity = DRONE.active ? '1' : '0.35';
+  CTL.drone.classList.toggle('on', DRONE.active);
   hudHp.style.width = Math.max(0, player.hp) + '%';
   hudHp.style.background = player.hp > 50 ? '#5ddc6a' : (player.hp > 25 ? '#ffc23a' : '#ff5a4a');
   crossEl.classList.toggle('hit', hitT > 0);
   hurtEl.style.opacity = clamp(hurtT / 0.45, 0, 1) * 0.9;
-  scopeEl.style.display = (zoomAmt > 0.8 && id && WEAPONS[id].optic === 'scope' && !effTP()) ? 'block' : 'none';
+  scopeEl.style.display = (zoomAmt > 0.8 && id && WEAPONS[id].optic === 'scope' && !effTP() && !DRONE.active) ? 'block' : 'none';
   deadEl.style.display = player.dead ? 'block' : 'none';
-  if (player.dead) respawnTxt.textContent = `Respawn in ${Math.ceil(player.deadT)} s`;
+  if (player.dead) setText(respawnTxt, `Respawn in ${Math.ceil(player.deadT)} s`);
   CTL.aim.classList.toggle('on', aimOn);
   CTL.duck.classList.toggle('on', player.poseTarget === 1);
   CTL.prone.classList.toggle('on', player.poseTarget === 2);
 }
 
-// Richtungspfeile: roter Pfeil am Bildrand zeigt, aus welcher Richtung geschossen wird, mit Entfernung
+// Richtungspfeile: rot = Schuss, orange = Granate. Zeigen am Bildrand, woher es kommt, mit Entfernung.
 function updateIndicators(dt) {
   for (const d of dmgList) d.life -= dt;
   for (let i = dmgList.length - 1; i >= 0; i--) if (dmgList[i].life <= 0) dmgList.splice(i, 1);
@@ -1417,26 +2003,28 @@ function updateIndicators(dt) {
   dmgEls.forEach((e, i) => {
     const d = dmgList[i];
     if (!d || player.dead) { e.w.style.display = 'none'; return; }
-    const dx = d.bot.x - player.x, dz = d.bot.z - player.z;
+    const dx = d.src.x - player.x, dz = d.src.z - player.z;
     const dist = Math.hypot(dx, dz) || 0.001;
     const fwd = (-sy * dx - cy * dz) / dist;     // Anteil vorne
     const rgt = (cy * dx - sy * dz) / dist;      // Anteil rechts
     const a = Math.atan2(rgt, fwd);
+    const alpha = clamp(d.life, 0, 1);
     e.w.style.display = 'block';
     e.w.style.left = (W / 2 + Rr * Math.sin(a)) + 'px';
     e.w.style.top = (Hh / 2 - Rr * Math.cos(a)) + 'px';
     e.a.style.transform = `translate(-50%, -50%) rotate(${a}rad)`;
-    e.a.style.opacity = clamp(d.life, 0, 1);
-    e.l.textContent = `${Math.round(dist)} m`;
+    e.a.style.borderBottomColor = d.kind === 'gren' ? '#ffb020' : '#ff4a3a';
+    e.a.style.opacity = alpha;
+    e.l.textContent = (d.kind === 'gren' ? 'GRANATE · ' : '') + `${Math.round(dist)} m`;
     e.l.style.left = (Math.sin(a) * 28) + 'px';
     e.l.style.top = (-Math.cos(a) * 28) + 'px';
-    e.l.style.opacity = clamp(d.life, 0, 1);
+    e.l.style.opacity = alpha;
   });
 }
 
-// ===================== Kamera (1. und 3. Person) =====================
-// In Deckung (geduckt/liegend) wechselt die Ansicht automatisch in die 3. Person
-function effTP() { return thirdPerson || player.pose > 0.5; }
+// ===================== Kamera =====================
+// Die Ansicht bleibt beim Ducken und Liegen in der 1. Person; die 3. Person gibt es nur ueber den Knopf.
+function effTP() { return thirdPerson; }
 function aimPitch() { return clamp(player.pitch + player.recoilOff, -1.45, 1.45); }
 const _pivot = new THREE.Vector3(), _want = new THREE.Vector3();
 function insideSolid(x, y, z) {
@@ -1459,6 +2047,14 @@ function clampCamera(from, to) {       // Kamera nicht durch Waende schieben
 }
 function updateCamera() {
   const id = curId();
+  if (DRONE.active) {                  // Drohnen-Kamera
+    playerRig.root.visible = false;
+    viewModel.visible = false;
+    if (Math.abs(camera.fov - 80) > 0.01) { camera.fov = 80; camera.updateProjectionMatrix(); }
+    camera.position.set(DRONE.x, DRONE.y, DRONE.z);
+    camera.rotation.set(DRONE.pitch, DRONE.yaw, 0);
+    return;
+  }
   const tp = effTP();
   playerRig.root.visible = tp;
   viewModel.visible = !tp;
@@ -1493,7 +2089,7 @@ function updateViewModel(walkAmt, phase) {
   viewModel.position.set(bobX, bobY, 0);
   for (const k of WEAPON_IDS) {
     const s = fpSet[k];
-    const show = k === id && screen === 'game' && !effTP() && !(zoomAmt > 0.85 && WEAPONS[k].optic === 'scope');
+    const show = k === id && screen === 'game' && !effTP() && !DRONE.active && !(zoomAmt > 0.85 && WEAPONS[k].optic === 'scope');
     s.holder.visible = show;
     for (const m of s.arms) m.visible = show;
     for (const m of s.hands) m.visible = show;
@@ -1673,6 +2269,8 @@ function exitEdit() {
 $('editDone').addEventListener('click', exitEdit);
 
 // ===================== Eingabe: Touch (Mehrfingerbedienung), Maus, Tastatur =====================
+const CTL_HIT = ['jump', 'fire', 'aim', 'reload', 'duck', 'prone', 'gren', 'drone', 'crash', 'hotbar', 'view'];
+const DRONE_KEYS = ['fire', 'drone', 'crash', 'view', 'hotbar'];     // in der Drohne aktiv
 function inEl(el, x, y, pad = 0) {
   const r = el.getBoundingClientRect();
   return x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
@@ -1682,6 +2280,7 @@ function slotAt(x, y) { for (let i = 0; i < hbSlotEls.length; i++) if (inEl(hbSl
 function zoneOf(x) { return x < window.innerWidth / 3 ? 'move' : 'look'; }
 function anyRole(role) { for (const p of pointers.values()) if (p.role === role) return true; return false; }
 
+// Der Joystick bleibt immer sichtbar (auch beim Zielen mit Scope)
 function setStickVisible(on) {
   if (settings.fixedStick) {
     idleEl.style.display = 'block';
@@ -1721,18 +2320,22 @@ window.addEventListener('pointerdown', e => {
   if (inEl(settingsBtn, x, y, 8)) { openSettings(); return; }
 
   const k = ctlAt(x, y);
+  if (k && DRONE.active && !DRONE_KEYS.includes(k)) return;      // in der Drohne nur Drohnen-Knoepfe
   if (k === 'jump') {
     pointers.set(id, { role: 'jump' });
     CTL.jump.classList.add('down');
-    if (player.poseTarget !== 0) player.poseTarget = 0;   // Springen steht zuerst auf
+    if (player.poseTarget !== 0) player.poseTarget = 0;         // Springen steht zuerst auf
     else player.jumpBuf = JUMP_BUFFER;
     return;
   }
   if (k === 'fire') { pointers.set(id, { role: 'fire' }); CTL.fire.classList.add('down'); fireQueued = true; return; }
-  if (k === 'aim') { aimOn = !aimOn; return; }                    // Umschalter
+  if (k === 'aim') { aimOn = !aimOn; return; }                  // Umschalter
   if (k === 'reload') { startReload(); return; }
   if (k === 'duck') { toggleStance(1); return; }
   if (k === 'prone') { toggleStance(2); return; }
+  if (k === 'gren') { throwPlayerGrenade(); return; }
+  if (k === 'drone') { if (DRONE.active) droneEnd(); else droneLaunch(); return; }
+  if (k === 'crash') { droneCrash(); return; }
   if (k === 'hotbar') { const i = slotAt(x, y); if (i >= 0) selectSlot(i); return; }
   if (k === 'view') { toggleView(); return; }
 
@@ -1757,10 +2360,17 @@ window.addEventListener('pointermove', e => {
     p.x = e.clientX; p.y = e.clientY;
     updateStick(p);
   } else if (p.role === 'look') {
-    const sens = LOOK_SENS * settings.sens * lerp(1, 0.4, zoomAmt);
-    player.yaw -= (e.clientX - p.x) * sens;
-    const dy = (e.clientY - p.y) * sens * (settings.invertY ? -1 : 1);
-    player.pitch = clamp(player.pitch - dy, -1.45, 1.45);
+    const invert = settings.invertY ? -1 : 1;
+    if (DRONE.active) {                                          // Blick der Drohne
+      const sens = LOOK_SENS * settings.sens;
+      DRONE.yaw -= (e.clientX - p.x) * sens;
+      DRONE.pitch = clamp(DRONE.pitch - (e.clientY - p.y) * sens * invert, -1.2, 1.2);
+    } else {
+      const sens = LOOK_SENS * settings.sens * lerp(1, 0.4, zoomAmt);
+      player.yaw -= (e.clientX - p.x) * sens;
+      const dy = (e.clientY - p.y) * sens * invert;
+      player.pitch = clamp(player.pitch - dy, -1.45, 1.45);
+    }
     p.x = e.clientX; p.y = e.clientY;
   } else if (p.role === 'edit') {
     const W = window.innerWidth, Hh = window.innerHeight;
@@ -1796,17 +2406,21 @@ window.addEventListener('keydown', e => {
   if (screen !== 'game' || settingsOpen || editMode) return;
   keys.add(e.code);
   if (e.repeat) return;
+  if (e.code === 'KeyV') toggleView();
+  if (e.code === 'KeyF') fireQueued = true;
+  if (/^Digit[1-4]$/.test(e.code)) selectSlot(+e.code.slice(-1) - 1);
+  if (e.code === 'KeyT') { if (DRONE.active) droneEnd(); else droneLaunch(); }
+  if (e.code === 'KeyK') droneCrash();
+  if (DRONE.active) return;                                       // in der Drohne nur Fliegen und Feuer
   if (e.code === 'Space') {
     e.preventDefault();
     if (player.poseTarget !== 0) player.poseTarget = 0; else player.jumpBuf = JUMP_BUFFER;
   }
-  if (e.code === 'KeyV') toggleView();
-  if (e.code === 'KeyF') fireQueued = true;
   if (e.code === 'KeyQ') aimOn = !aimOn;
   if (e.code === 'KeyR') startReload();
   if (e.code === 'KeyC') toggleStance(1);
   if (e.code === 'KeyX') toggleStance(2);
-  if (/^Digit[1-4]$/.test(e.code)) selectSlot(+e.code.slice(-1) - 1);
+  if (e.code === 'KeyG') throwPlayerGrenade();
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 window.addEventListener('blur', () => { keys.clear(); stick.x = stick.y = 0; });
@@ -1820,6 +2434,7 @@ function step(dt) {
   const paused = screen !== 'game' || settingsOpen || editMode;
   if (!paused) {
     gameTime += dt;
+    if (DRONE.cooldown > 0) DRONE.cooldown -= dt;
 
     // Eingabe: Stick und Tastatur, Laenge auf 1 begrenzen
     let mx = stick.x, mz = stick.y;
@@ -1830,37 +2445,41 @@ function step(dt) {
     const len = Math.hypot(mx, mz);
     if (len > 1) { mx /= len; mz /= len; }
     const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
-    const wx = -sy * mz + cy * mx, wz = -cy * mz - sy * mx;   // in Welt-Koordinaten
-    player.moveX = wx; player.moveZ = wz;
+    const wx = -sy * mz + cy * mx, wz = -cy * mz - sy * mx;    // in Welt-Koordinaten
 
-    // Haltung gleitet zum Ziel (stehen / ducken / liegen)
-    player.pose += (player.poseTarget - player.pose) * Math.min(1, dt * 8);
-
-    if (!player.dead) {
-      const spd = PLAYER.speed * lerpPose(POSE_SPEED, player.pose);
-      updatePlayerPhysics(dt, wx * spd, wz * spd);
+    if (DRONE.active) {
+      // Drohne: Stick fliegt, FEUER schiesst. Der Spieler steht still.
+      updateDrone(dt, mx, mz);
+      if (anyRole('fire') || keys.has('KeyF') || fireQueued) droneFire();
+      fireQueued = false;
+      player.moveX = 0; player.moveZ = 0;
+      drawVhs(performance.now());
     } else {
-      player.deadT -= dt;
-      if (player.deadT <= 0) respawnPlayer();
+      player.moveX = wx; player.moveZ = wz;
+      // Haltung gleitet zum Ziel (stehen / ducken / liegen)
+      player.pose += (player.poseTarget - player.pose) * Math.min(1, dt * 8);
+      if (!player.dead) {
+        const spd = PLAYER.speed * lerpPose(POSE_SPEED, player.pose);
+        updatePlayerPhysics(dt, wx * spd, wz * spd);
+      } else {
+        player.deadT -= dt;
+        if (player.deadT <= 0) respawnPlayer();
+      }
+      // ZIEL ist ein Umschalter, der Zoom gleitet dorthin
+      const zt = aimOn && !player.dead ? 1 : 0;
+      zoomAmt += (zt - zoomAmt) * Math.min(1, dt * 12);
+      // Rueckstoss legt sich wieder
+      player.recoilOff -= player.recoilOff * Math.min(1, dt * 5);
+      if (player.recoilOff < 1e-4) player.recoilOff = 0;
+      updateCamera();
+      // Feuer: Automatik bei gehaltenem Knopf, sonst pro Tipp
+      if (!player.dead) {
+        const id = curId();
+        const auto = id && WEAPONS[id].auto && (anyRole('fire') || keys.has('KeyF'));
+        if (fireQueued || auto) fireShot();
+      }
+      fireQueued = false;
     }
-
-    // ZIEL ist ein Umschalter, der Zoom gleitet dorthin
-    const zt = aimOn && !player.dead ? 1 : 0;
-    zoomAmt += (zt - zoomAmt) * Math.min(1, dt * 12);
-
-    // Rueckstoss legt sich wieder
-    player.recoilOff -= player.recoilOff * Math.min(1, dt * 5);
-    if (player.recoilOff < 1e-4) player.recoilOff = 0;
-
-    updateCamera();
-
-    // Feuer: Automatik bei gehaltenem Knopf, sonst pro Tipp
-    if (!player.dead) {
-      const id = curId();
-      const auto = id && WEAPONS[id].auto && (anyRole('fire') || keys.has('KeyF'));
-      if (fireQueued || auto) fireShot();
-    }
-    fireQueued = false;
 
     // Nachladen und Timer
     if (reloadT > 0) {
@@ -1877,6 +2496,7 @@ function step(dt) {
       }
     }
 
+    updateGrenades(dt);
     updateBots(dt);
     updateEffects(dt);
 
@@ -1917,6 +2537,7 @@ window.addEventListener('resize', layout);
 layout();
 makeTerrain();
 buildMap();
+navBuild();
 renderLobby();
 setScreen('lobby');
 resetMatch();

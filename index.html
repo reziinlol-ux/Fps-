@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#9fd3ff" />
+<title>Pill FPS</title>
+<style>
+  :root {
+    --ring: rgba(255, 255, 255, 0.35);
+    --knob: rgba(255, 255, 255, 0.55);
+  }
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0b1020;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    color: #fff;
+  }
+  canvas#game {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+  }
+  .ui { position: fixed; inset: 0; pointer-events: none; }
+
+  /* Joystick */
+  #stickIdle, #base, #knob {
+    position: absolute;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  #stickIdle {
+    width: 150px; height: 150px;
+    border: 3px dashed var(--ring);
+    background: rgba(255, 255, 255, 0.05);
+  }
+  #base {
+    display: none;
+    width: 150px; height: 150px;
+    border: 3px solid var(--ring);
+    background: rgba(255, 255, 255, 0.10);
+  }
+  #knob {
+    display: none;
+    width: 66px; height: 66px;
+    background: var(--knob);
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.25);
+  }
+
+  /* Sprung-Knopf unten rechts */
+  #jump {
+    position: fixed;
+    right: calc(36px + env(safe-area-inset-right));
+    bottom: calc(36px + env(safe-area-inset-bottom));
+    width: 104px; height: 104px;
+    border-radius: 50%;
+    border: 3px solid var(--ring);
+    background: rgba(255, 255, 255, 0.14);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 15px; letter-spacing: 0.06em;
+    pointer-events: none;
+    box-sizing: border-box;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  }
+  #jump.down { background: rgba(255, 255, 255, 0.42); }
+
+  #crosshair {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 6px; height: 6px;
+    margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+  }
+
+  #start {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+    text-align: center;
+    background: rgba(5, 8, 18, 0.5);
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  #start.hidden { opacity: 0; }
+  #start h1 { margin: 0 0 14px; font-size: clamp(28px, 5vw, 44px); }
+  #start p { margin: 6px 0; font-size: clamp(14px, 2.4vw, 18px); opacity: 0.9; }
+  #start .go {
+    margin-top: 20px;
+    padding: 14px 28px;
+    border-radius: 999px;
+    background: #fff;
+    color: #0b1020;
+    font-weight: 700;
+    font-size: 18px;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div class="ui">
+  <div id="stickIdle"></div>
+  <div id="base"></div>
+  <div id="knob"></div>
+  <div id="crosshair"></div>
+</div>
+
+<div id="jump">SPRUNG</div>
+
+<div id="start">
+  <h1>Pill FPS</h1>
+  <p>Links (1/3 des Bildschirms) irgendwo ziehen = laufen</p>
+  <p>Rechts (2/3) ziehen = umschauen</p>
+  <p>Unten rechts = springen</p>
+  <div class="go">Zum Starten tippen</div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+// ---------------------------------------------------------------
+// Einstellungen
+// ---------------------------------------------------------------
+const PLAYER = {
+  radius: 0.35,     // Pill: Radius
+  height: 1.8,      // Pill: Gesamthoehe (Fuss bis Kopf)
+  eye: 1.62,        // Kamera-Hoehe ueber den Fuessen
+  speed: 5.5,       // m/s
+  jumpSpeed: 7.6,   // Anfangsgeschwindigkeit beim Sprung
+  gravity: -22,     // m/s^2
+};
+const STICK_MAX = 70;       // Pixel, ab hier ist der Stick voll ausgelenkt
+const STICK_DEAD = 0.12;    // Totzone
+const LOOK_SENS = 0.0042;   // Rad pro Pixel
+const JUMP_BUFFER = 0.15;   // Sekunden, damit ein kurzer Tipp nicht verloren geht
+const WORLD = 50;           // halbe Kantenlaenge der Spielflaeche
+const H = PLAYER.height, R = PLAYER.radius;
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const $ = id => document.getElementById(id);
+
+const canvas = $('game');
+const baseEl = $('base');
+const knobEl = $('knob');
+const idleEl = $('stickIdle');
+const jumpEl = $('jump');
+const startEl = $('start');
+
+// ---------------------------------------------------------------
+// Three.js Grundaufbau
+// ---------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fd3ff);
+scene.fog = new THREE.Fog(0x9fd3ff, 35, 140);
+
+const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 400);
+camera.rotation.order = 'YXZ';   // erst Blick links/rechts, dann hoch/runter
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x4a5a3a, 1.1));
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 120 });
+sun.shadow.camera.updateProjectionMatrix();
+scene.add(sun);
+scene.add(sun.target);
+
+// Boden mit Gitter-Textur, damit man Bewegung gut sieht
+function makeGridTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#7fae6a';
+  g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = 'rgba(255,255,255,0.35)';
+  g.lineWidth = 3;
+  g.strokeRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(25, 25);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(WORLD * 2, WORLD * 2),
+  new THREE.MeshStandardMaterial({ map: makeGridTexture(), roughness: 1 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ---------------------------------------------------------------
+// Level: Kisten, Treppe, Plattformen, Waende
+// Jede Box ist zugleich Kollisionsobjekt (AABB, Boden liegt bei y=0)
+// ---------------------------------------------------------------
+const solids = [];
+function addBox(cx, cz, sx, h, sz, color) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(sx, h, sz),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.75 })
+  );
+  mesh.position.set(cx, h / 2, cz);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  solids.push({
+    minX: cx - sx / 2, maxX: cx + sx / 2,
+    minZ: cz - sz / 2, maxZ: cz + sz / 2,
+    minY: 0, maxY: h,
+  });
+}
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// Waende
+const WALL_H = 6, WALL_T = 2;
+addBox(0, -WORLD, WORLD * 2 + WALL_T, WALL_H, WALL_T, 0x555b66);
+addBox(0,  WORLD, WORLD * 2 + WALL_T, WALL_H, WALL_T, 0x555b66);
+addBox(-WORLD, 0, WALL_T, WALL_H, WORLD * 2 + WALL_T, 0x555b66);
+addBox( WORLD, 0, WALL_T, WALL_H, WORLD * 2 + WALL_T, 0x555b66);
+
+// Treppe
+addBox(8,  -8, 4, 0.6, 4, 0xd08a5a);
+addBox(12, -8, 4, 1.2, 4, 0xd08a5a);
+addBox(16, -8, 4, 1.8, 4, 0xd08a5a);
+addBox(20, -8, 4, 2.4, 4, 0xd08a5a);
+
+// Plattformen
+addBox(-14, -12, 8, 3, 8, 0x5a8fd0);
+addBox(-8, 10, 6, 1.1, 3, 0x9a6fd0);
+addBox(-18, 14, 3, 4.5, 3, 0x7fd0b0);
+addBox(0, 16, 14, 1.6, 1.4, 0xbbbbbb);
+
+// Saeulen im Kreis
+for (let i = 0; i < 12; i++) {
+  const a = (i / 12) * Math.PI * 2;
+  addBox(Math.cos(a) * 26, Math.sin(a) * 26, 1.6, 5, 1.6, 0xeeeeee);
+}
+
+// Zufaellige Kisten (fester Seed = immer gleiche Map), Spawn bleibt frei
+const rng = mulberry32(42);
+for (let i = 0; i < 45; i++) {
+  const x = (rng() * 2 - 1) * (WORLD - 4);
+  const z = (rng() * 2 - 1) * (WORLD - 4);
+  if (Math.hypot(x, z) < 6) continue;
+  const s = 1 + rng() * 1.6;
+  const color = new THREE.Color().setHSL(rng(), 0.45, 0.55).getHex();
+  addBox(x, z, s, s * (0.6 + rng() * 0.6), s, color);
+}
+
+// ---------------------------------------------------------------
+// Spieler (Pill = Kapsel-Kollision: Radius R, Hoehe H)
+// ---------------------------------------------------------------
+const player = {
+  x: 0, y: 0, z: 10,   // y = Fuesse
+  vy: 0,
+  grounded: false,
+  yaw: 0,              // Blickrichtung links/rechts
+  pitch: 0,            // Blickrichtung hoch/runter
+  jumpBuf: 0,
+};
+
+// Kreis (Pill von oben gesehen) gegen Box in der XZ-Ebene
+function circleTouchesBox(p, b) {
+  const cx = clamp(p.x, b.minX, b.maxX);
+  const cz = clamp(p.z, b.minZ, b.maxZ);
+  const dx = p.x - cx, dz = p.z - cz;
+  return dx * dx + dz * dz <= R * R + 1e-4;
+}
+
+// Seitliche Kollision: Pill wird aus Boxen herausgeschoben
+function resolveHorizontal(p) {
+  for (const b of solids) {
+    if (p.y >= b.maxY - 0.01) continue;           // wir stehen ueber der Box
+    const cx = clamp(p.x, b.minX, b.maxX);
+    const cz = clamp(p.z, b.minZ, b.maxZ);
+    const dx = p.x - cx, dz = p.z - cz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 >= R * R) continue;
+    if (d2 > 1e-8) {
+      const d = Math.sqrt(d2);
+      const push = (R - d) / d;
+      p.x += dx * push;
+      p.z += dz * push;
+    } else {
+      // Mittelpunkt steckt in der Box: kuerzeste Seite waehlen
+      const left = p.x - b.minX, right = b.maxX - p.x;
+      const back = p.z - b.minZ, front = b.maxZ - p.z;
+      const m = Math.min(left, right, back, front);
+      if (m === left) p.x = b.minX - R;
+      else if (m === right) p.x = b.maxX + R;
+      else if (m === back) p.z = b.minZ - R;
+      else p.z = b.maxZ + R;
+    }
+  }
+}
+
+// ---------------------------------------------------------------
+// Eingabe
+// ---------------------------------------------------------------
+const stick = { x: 0, y: 0 };      // Stick-Ausschlag, y = vorwaerts
+const keys = new Set();
+const pointers = new Map();        // pointerId -> { role, ... }
+let started = false;
+
+function startGame() {
+  if (started) return;
+  started = true;
+  startEl.classList.add('hidden');
+}
+
+function inJumpZone(x, y) {
+  const r = jumpEl.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  return Math.hypot(x - cx, y - cy) <= r.width / 2 + 24;
+}
+
+// Linkes Drittel = Laufen, der Rest = Umschauen
+function zoneOf(x) {
+  return x < window.innerWidth / 3 ? 'move' : 'look';
+}
+
+function setStickVisible(on) {
+  baseEl.style.display = on ? 'block' : 'none';
+  knobEl.style.display = on ? 'block' : 'none';
+  idleEl.style.display = on ? 'none' : 'block';
+}
+
+function updateStick(p) {
+  const dx = p.x - p.ox, dy = p.y - p.oy;
+  const dist = Math.min(Math.hypot(dx, dy), STICK_MAX);
+  const ang = Math.atan2(dy, dx);
+  const kx = Math.cos(ang) * dist, ky = Math.sin(ang) * dist;
+
+  baseEl.style.left = p.ox + 'px';
+  baseEl.style.top = p.oy + 'px';
+  knobEl.style.left = (p.ox + kx) + 'px';
+  knobEl.style.top = (p.oy + ky) + 'px';
+
+  let m = dist / STICK_MAX;
+  m = m < STICK_DEAD ? 0 : (m - STICK_DEAD) / (1 - STICK_DEAD);
+  stick.x = Math.cos(ang) * m;
+  stick.y = -Math.sin(ang) * m;   // nach oben = vorwaerts
+}
+
+function activeStickPointer() {
+  for (const p of pointers.values()) if (p.role === 'move') return p;
+  return null;
+}
+
+window.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  startGame();
+
+  if (inJumpZone(e.clientX, e.clientY)) {
+    pointers.set(e.pointerId, { role: 'jump' });
+    jumpEl.classList.add('down');
+    player.jumpBuf = JUMP_BUFFER;
+    return;
+  }
+
+  if (zoneOf(e.clientX) === 'move') {
+    const p = { role: 'move', ox: e.clientX, oy: e.clientY, x: e.clientX, y: e.clientY };
+    pointers.set(e.pointerId, p);
+    setStickVisible(true);
+    updateStick(p);
+  } else {
+    pointers.set(e.pointerId, { role: 'look', x: e.clientX, y: e.clientY });
+  }
+});
+
+window.addEventListener('pointermove', e => {
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  if (p.role === 'move') {
+    p.x = e.clientX;
+    p.y = e.clientY;
+    updateStick(p);
+  } else if (p.role === 'look') {
+    player.yaw -= (e.clientX - p.x) * LOOK_SENS;
+    player.pitch = clamp(player.pitch - (e.clientY - p.y) * LOOK_SENS, -1.45, 1.45);
+    p.x = e.clientX;
+    p.y = e.clientY;
+  }
+});
+
+function endPointer(e) {
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  pointers.delete(e.pointerId);
+
+  if (p.role === 'jump') {
+    jumpEl.classList.remove('down');
+  } else if (p.role === 'move') {
+    const other = activeStickPointer();
+    if (other) {
+      updateStick(other);
+    } else {
+      stick.x = 0;
+      stick.y = 0;
+      setStickVisible(false);
+    }
+  }
+}
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+
+// Tastatur (zum Testen am Rechner)
+window.addEventListener('keydown', e => {
+  startGame();
+  keys.add(e.code);
+  if (e.code === 'Space') {
+    player.jumpBuf = JUMP_BUFFER;
+    e.preventDefault();
+  }
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => { keys.clear(); stick.x = stick.y = 0; });
+
+// iPad: kein Scrollen, Zoomen oder Kontextmenue
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------
+function layout() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+
+  // Ruhe-Anzeige des Sticks unten links
+  idleEl.style.left = Math.max(100, w / 6) + 'px';
+  idleEl.style.top = (h - Math.max(110, h * 0.22)) + 'px';
+}
+window.addEventListener('resize', layout);
+layout();
+
+// ---------------------------------------------------------------
+// Update: Bewegung, Schwerkraft, Kamera
+// ---------------------------------------------------------------
+let bobT = 0;
+
+function update(dt) {
+  // Eingabe: Stick + Tastatur, Laenge auf 1 begrenzen
+  let mx = stick.x, my = stick.y;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) my += 1;
+  if (keys.has('KeyS') || keys.has('ArrowDown')) my -= 1;
+  if (keys.has('KeyD') || keys.has('ArrowRight')) mx += 1;
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) mx -= 1;
+  const len = Math.hypot(mx, my);
+  if (len > 1) { mx /= len; my /= len; }
+
+  // Vorwaerts/Rechts aus der Blickrichtung (nur Yaw)
+  const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
+  const fx = -sy, fz = -cy;
+  const rx = cy, rz = -sy;
+  const wx = fx * my + rx * mx;
+  const wz = fz * my + rz * mx;
+
+  // Horizontal bewegen und an Waenden abprallen lassen
+  player.x += wx * PLAYER.speed * dt;
+  player.z += wz * PLAYER.speed * dt;
+  resolveHorizontal(player);
+
+  // Sprung (mit kleinem Puffer, damit der Tipp nicht verloren geht)
+  player.jumpBuf = Math.max(0, player.jumpBuf - dt);
+  if (player.jumpBuf > 0 && player.grounded) {
+    player.vy = PLAYER.jumpSpeed;
+    player.grounded = false;
+    player.jumpBuf = 0;
+  }
+
+  // Schwerkraft
+  const prevY = player.y;
+  player.vy += PLAYER.gravity * dt;
+  player.y += player.vy * dt;
+
+  // Boden: Hoechster Block unter der Pill, auf den wir gerade gefallen sind
+  let support = 0;
+  for (const b of solids) {
+    if (!circleTouchesBox(player, b)) continue;
+    if (b.maxY <= prevY + 0.05 && b.maxY > support) support = b.maxY;
+  }
+  if (player.y <= support) {
+    player.y = support;
+    if (player.vy < 0) player.vy = 0;
+    player.grounded = true;
+  } else {
+    player.grounded = false;
+  }
+
+  // Kamera auf Augenhoehe (mit leichtem Wackeln beim Laufen)
+  const moving = player.grounded && Math.hypot(wx, wz) > 0.1;
+  bobT += dt * (moving ? 9 : 0);
+  const bob = moving ? Math.sin(bobT) * 0.04 : 0;
+  camera.position.set(player.x, player.y + PLAYER.eye + bob, player.z);
+  camera.rotation.set(player.pitch, player.yaw, 0);
+
+  // Sonne folgt dem Spieler, damit Schatten ueberall da sind
+  sun.position.set(player.x + 20, 40, player.z + 15);
+  sun.target.position.set(player.x, 0, player.z);
+  sun.target.updateMatrixWorld();
+}
+
+// ---------------------------------------------------------------
+// Schleife
+// ---------------------------------------------------------------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 1 / 30);
+  last = now;
+  update(dt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

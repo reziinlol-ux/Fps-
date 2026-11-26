@@ -285,6 +285,9 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd3cdb8, 95, 300);
@@ -302,17 +305,36 @@ scene.add(camera);
     cols.push(c.r, c.g, c.b);
   }
   sg.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-  scene.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false })));
+  scene.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, toneMapped: false })));
 }
-scene.add(new THREE.HemisphereLight(0xe4efff, 0x6b5f4a, 1.0));
-const sun = new THREE.DirectionalLight(0xffe2b5, 1.7);
+{ // Umgebungslicht: Himmel als Reflexionsbild (fuer Metall, Glas, Lack und Wasser)
+  const es = new THREE.Scene();
+  const eg = new THREE.SphereGeometry(50, 32, 16);
+  const ep = eg.attributes.position, ec = [];
+  const top = new THREE.Color(0x7fb0e6), mid = new THREE.Color(0xe8e2d0), bot = new THREE.Color(0x6e6a5c), c = new THREE.Color();
+  for (let i = 0; i < ep.count; i++) {
+    const t = ep.getY(i) / 50;
+    if (t >= 0) c.copy(mid).lerp(top, Math.min(1, t * 1.6));
+    else c.copy(mid).lerp(bot, Math.min(1, -t * 2.2));
+    ec.push(c.r, c.g, c.b);
+  }
+  eg.setAttribute('color', new THREE.Float32BufferAttribute(ec, 3));
+  es.add(new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(es, 0.04).texture;
+  pm.dispose();
+}
+scene.add(new THREE.HemisphereLight(0xdfeeff, 0x6b5f4a, 0.9));
+const sun = new THREE.DirectionalLight(0xffe2b5, 2.3);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
-Object.assign(sun.shadow.camera, { left: -36, right: 36, top: 36, bottom: -36, near: 1, far: 140 });
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.04;
+Object.assign(sun.shadow.camera, { left: -42, right: 42, top: 42, bottom: -42, near: 1, far: 160 });
 sun.shadow.camera.updateProjectionMatrix();
 scene.add(sun, sun.target);
 
-// ===================== Materialien und Farben =====================
+// ===================== Materialien fuer Figuren und Effekte =====================
 const matCache = new Map();
 function mat(color, rough = 0.85, metal = 0) {
   const k = `${color}|${rough}|${metal}`;
@@ -356,91 +378,260 @@ const MAT = {
   tracerA: new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9 }),
   tracerB: new THREE.LineBasicMaterial({ color: 0xff7a4a, transparent: true, opacity: 0.9 }),
 };
-const C = {
-  concrete: 0x9b988e, concreteDark: 0x7f7c73, asphalt: 0x3a3b3d, paint: 0xdcd8c4, sidewalk: 0xa3a097,
-  brick: 0x8a5a44, wall: 0x9a9385, roofDark: 0x4b4a46, glass: 0x2a3a46,
-  rust: 0x8a4a2a, olive: 0x4e5b3a, grey: 0x3e4c57, grey2: 0x5a6068,
-  sand: 0xa8926a, hesco: 0x6d6149, jersey: 0xb7b4aa, wood: 0x8a6a45, barrel: 0x2f4b3a,
-  pole: 0x6d6d6d, rail: 0x5c5a53, step: 0x8f8c82, tire: 0x1f1f1f, bus: 0xd8a33a, truckGrey: 0x6b6f72,
-  carRed: 0x8c2f25, carWhite: 0xcfcfc8, carBlue: 0x2c4d7d, carGrey: 0x5f656b, white: 0xc9c9c2,
-};
 
-// ===================== Gelaende: flacher Stadtkern, Huegel aussen =====================
-function groundAt(x, z) {
-  const ax = Math.max(0, Math.abs(x) - CORE_X), az = Math.max(0, Math.abs(z) - CORE_Z);
-  const m = clamp(Math.hypot(ax, az) / 10, 0, 1);
-  if (m <= 0) return 0;
-  const h = Math.sin(x * 0.085) * 1.5 + Math.cos(z * 0.11 + 1.3) * 1.3 + Math.sin((x + z) * 0.05) * 1.1;
-  return h * m;
+// ===================== Prozedurale Texturen (nahtlos kachelbar) =====================
+// Graustufen-Muster; die Farbe kommt pro Objekt aus den Vertex-Farben (Tint).
+function hash2(ix, iy, seed) {
+  let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(seed, 982451653)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
-const PARKS = [[-72, -50, 8], [72, 50, 8], [-30, -58, 6], [30, 58, 6], [-70, 48, 6], [70, -48, 6]];
-function inPark(x, z) { return PARKS.some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r); }
-function makeTerrain() {
-  const g = new THREE.PlaneGeometry(MAP_X * 2, MAP_Z * 2, 130, 90);
-  g.rotateX(-Math.PI / 2);
-  const pos = g.attributes.position, cols = new Float32Array(pos.count * 3);
-  const cA = new THREE.Color(), cB = new THREE.Color(), cc = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = pos.getZ(i);
-    pos.setY(i, groundAt(x, z));
-    const n = 0.5 + 0.5 * Math.sin(x * 1.3 + Math.sin(z * 0.7) * 2.0) * Math.cos(z * 1.1 - x * 0.37);
-    const inCore = Math.abs(x) <= CORE_X && Math.abs(z) <= CORE_Z;
-    if (inCore) {
-      if (inPark(x, z)) { cA.set(0x6f8f44); cB.set(0x5c7c38); }
-      else { cA.set(0x8d8a80); cB.set(0x7a776d); }
-    } else {
-      cA.set(0x62803e); cB.set(0x7d6b47);
-    }
-    cc.copy(cA).lerp(cB, n * 0.6);
-    cols[i * 3] = cc.r; cols[i * 3 + 1] = cc.g; cols[i * 3 + 2] = cc.b;
+// Periodisches Wertrauschen mit cx x cy Gitter (x, y in [0,1))
+function vn(x, y, cx, cy, seed) {
+  const fx = x * cx, fy = y * cy;
+  const ix = Math.floor(fx), iy = Math.floor(fy);
+  const tx = fx - ix, ty = fy - iy;
+  const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+  const x0 = ((ix % cx) + cx) % cx, y0 = ((iy % cy) + cy) % cy;
+  const x1 = (x0 + 1) % cx, y1 = (y0 + 1) % cy;
+  return lerp(lerp(hash2(x0, y0, seed), hash2(x1, y0, seed), sx), lerp(hash2(x0, y1, seed), hash2(x1, y1, seed), sx), sy);
+}
+function fbm(x, y, seed) { return 0.5 * vn(x, y, 4, 4, seed) + 0.3 * vn(x, y, 8, 8, seed + 7) + 0.2 * vn(x, y, 16, 16, seed + 13); }
+function makeTexture(size, pix) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const img = g.createImageData(size, size), d = img.data;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const v = Math.max(0, Math.min(1, pix(x, y, size))) * 255, i = (y * size + x) * 4;
+    d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255;
   }
-  g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-  g.computeVertexNormals();
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
-  m.receiveShadow = true;
-  scene.add(m);
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+const TEXF = {
+  plaster: (x, y, s) => 0.86 + 0.12 * (fbm(x / s, y / s, 3) - 0.5) + 0.04 * (hash2(x, y, 5) - 0.5),
+  concrete: (x, y, s) => {
+    let g = 0.84 + 0.14 * (fbm(x / s, y / s, 11) - 0.5) + 0.05 * (hash2(x, y, 6) - 0.5);
+    if (hash2(x, y, 7) > 0.995) g -= 0.25;             // Lunker
+    if (x % 32 === 0 || y % 32 === 0) g -= 0.05;      // Schalungsfugen
+    return g;
+  },
+  brick: (x, y, s) => {
+    const rowH = s / 8, bw = s / 4;
+    const row = Math.floor(y / rowH), off = (row % 2) * bw / 2;
+    const xx = (x + off) % s, col = Math.floor(xx / bw);
+    const mortar = (y % rowH) < 2 || (xx % bw) < 2;
+    const n = 0.05 * (fbm(x / s, y / s, 31) - 0.5);
+    return mortar ? 0.6 + n : 0.8 + 0.16 * hash2(col, row, 21) + n;
+  },
+  asphalt: (x, y, s) => {
+    let g = 0.27 + 0.1 * (fbm(x / s, y / s, 41) - 0.5) + 0.06 * (hash2(x, y, 42) - 0.5);
+    if (hash2(x, y, 43) > 0.997) g += 0.16;            // Splitt (selten)
+    return g;
+  },
+  grass: (x, y, s) => 0.72 + 0.22 * (fbm(x / s, y / s, 51) - 0.5) + 0.16 * (hash2(x, y, 52) - 0.5),
+  metal: (x, y, s) => 0.66 + 0.25 * (vn(x / s, y / s, 2, 40, 61) - 0.5) + 0.08 * (hash2(x, y, 62) - 0.5),
+  corrugated: (x, y, s) => {
+    const r = 0.5 + 0.5 * Math.sin((x / s) * Math.PI * 2 * 8);
+    return 0.5 + 0.4 * r * r + 0.03 * (fbm(x / s, y / s, 71) - 0.5);
+  },
+  wood: (x, y, s) => {
+    const plank = s / 4, seam = (y % plank) < 2 ? 0.55 : 1;
+    const grain = vn(x / s, y / s, 1, 12, 81);
+    return seam * (0.7 + 0.3 * grain - 0.08 * hash2(0, Math.floor(y / plank), 82));
+  },
+  roof: (x, y, s) => {
+    const rowH = s / 6, row = Math.floor(y / rowH), off = (row % 2) * (s / 8);
+    const xx = (x + off) % s, tw = s / 4;
+    const k = (y % rowH) / rowH;
+    return (0.55 + 0.45 * Math.sin(Math.PI * k)) * (0.78 + 0.18 * hash2(Math.floor(xx / tw), row, 91));
+  },
+  fabric: (x, y, s) => ((x + y) % 4 < 2 ? 1 : 0.92) * (0.8 + 0.18 * (fbm(x / s, y / s, 101) - 0.5) + 0.05 * (hash2(x, y, 102) - 0.5)),
+  mesh: (x, y, s) => {
+    const cell = s / 8, dx = x % cell, dy = y % cell;
+    const line = (dx < 2 || dy < 2) ? 0.3 : 0.85;
+    const dg = ((x + y) % cell) < 1.5 ? 0.75 : 1;
+    return line * dg * (0.9 + 0.1 * hash2(x, y, 111));
+  },
+  bark: (x, y, s) => 0.4 + 0.4 * (vn(x / s, y / s, 6, 2, 121) - 0.5) + 0.1 * (fbm(x / s, y / s, 122) - 0.5),
+  leaf: (x, y, s) => 0.5 + 0.4 * (fbm(x / s, y / s, 131) - 0.5) + 0.18 * (hash2(x, y, 132) - 0.5),
+  rock: (x, y, s) => 0.6 + 0.35 * (fbm(x / s, y / s, 141) - 0.5) + 0.12 * (hash2(x, y, 142) - 0.5),
+  rubber: (x, y) => 0.2 + 0.06 * (hash2(x, y, 151) - 0.5),
+  glass: (x, y) => 0.92 + 0.04 * (hash2(x, y, 161) - 0.5),
+  plain: () => 1,
+  water: (x, y, s) => 0.8 + 0.2 * (vn(x / s, y / s, 6, 6, 171) - 0.5),
+};
+// Kachelgroesse in Metern, Rauheit, Metall
+const TEXCFG = {
+  plaster: { src: 'plaster', tile: 3, rough: 0.92 },
+  brick: { src: 'brick', tile: 2, rough: 0.9 },
+  concrete: { src: 'concrete', tile: 4, rough: 0.95 },
+  asphalt: { src: 'asphalt', tile: 6, rough: 0.96 },
+  metal: { src: 'metal', tile: 1.5, rough: 0.45, metal: 0.55 },
+  corrugated: { src: 'corrugated', tile: 1.2, rough: 0.5, metal: 0.45 },
+  wood: { src: 'wood', tile: 1.6, rough: 0.8 },
+  roof: { src: 'roof', tile: 1.4, rough: 0.9 },
+  fabric: { src: 'fabric', tile: 0.7, rough: 0.95 },
+  mesh: { src: 'mesh', tile: 0.8, rough: 0.7, metal: 0.25 },
+  bark: { src: 'bark', tile: 1.5, rough: 0.95 },
+  leaf: { src: 'leaf', tile: 1.6, rough: 0.8 },
+  rock: { src: 'rock', tile: 2.5, rough: 0.95 },
+  rubber: { src: 'rubber', tile: 0.6, rough: 0.9 },
+  glass: { src: 'glass', tile: 1, rough: 0.1, metal: 0.25 },
+  plain: { src: 'plain', tile: 1, rough: 0.9 },
+  paint: { src: 'plain', tile: 1, rough: 0.35, metal: 0.2 },
+  water: { src: 'water', tile: 2, rough: 0.08, metal: 0.1 },
+};
+const TILE = {}, MATS = {};
+for (const k in TEXCFG) {
+  const cfg = TEXCFG[k];
+  TILE[k] = cfg.tile;
+  MATS[k] = new THREE.MeshStandardMaterial({
+    map: makeTexture(128, TEXF[cfg.src]), vertexColors: true,
+    roughness: cfg.rough, metalness: cfg.metal || 0, envMapIntensity: 0.8,
+  });
 }
 
-// ===================== Statische Optik: pro Farbe zu einem Mesh zusammengefasst =====================
+// ===================== Modell-Vorlagen (Einheitsgroesse, werden skaliert) =====================
+function h3(x, y, z, s) { const v = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + s * 4.1) * 43758.5453; return v - Math.floor(v); }
+// Felsen und Laub: Kugel mit unregelmaessiger Oberflaeche
+function noisyBlob(detail, amp, seed) {
+  const g = new THREE.IcosahedronGeometry(1, detail);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const l = Math.hypot(x, y, z) || 1;
+    const nx = x / l, ny = y / l, nz = z / l;
+    const r = 1 + amp * (h3(nx, ny, nz, seed) - 0.5) * 2;
+    p.setXYZ(i, nx * r, ny * r, nz * r);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+// Satteldach-Prisma: Querschnitt in x/y, First entlang z (Breite 1, Hoehe 1, Laenge 1)
+function makeGable() {
+  const v = [], n = [];
+  const quad = (a, b, c, d, nx, ny, nz) => {
+    v.push(...a, ...b, ...c, ...a, ...c, ...d);
+    for (let i = 0; i < 6; i++) n.push(nx, ny, nz);
+  };
+  quad([-0.5, 0, -0.5], [-0.5, 0, 0.5], [0, 1, 0.5], [0, 1, -0.5], -0.894, 0.447, 0);
+  quad([0.5, 0, -0.5], [0, 1, -0.5], [0, 1, 0.5], [0.5, 0, 0.5], 0.894, 0.447, 0);
+  v.push(-0.5, 0, 0.5, 0.5, 0, 0.5, 0, 1, 0.5);
+  for (let i = 0; i < 3; i++) n.push(0, 0, 1);
+  v.push(0.5, 0, -0.5, -0.5, 0, -0.5, 0, 1, -0.5);
+  for (let i = 0; i < 3; i++) n.push(0, 0, -1);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3));
+  return g;
+}
+// Fahnentuch: Ebene mit leichter Welle
+function makeCloth() {
+  const g = new THREE.PlaneGeometry(1, 1, 12, 6);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i);
+    p.setZ(i, Math.sin((x + 0.5) * 5) * 0.06 * (x + 0.5) + Math.sin(y * 4) * 0.02);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+// Profil (x = Laenge, y = Hoehe) in die Breite (z) extrudiert, leicht abgerundet
+function makeProfile(pts, bevel) {
+  const sh = new THREE.Shape();
+  sh.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) sh.lineTo(pts[i][0], pts[i][1]);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 4 });
+  g.translate(0, 0, -0.5);
+  g.computeVertexNormals();
+  return g;
+}
+const CAR_BODY_PTS = [[-0.5, 0.12], [0.5, 0.12], [0.5, 0.34], [0.47, 0.42], [0.4, 0.47], [0.3, 0.5], [-0.28, 0.52], [-0.42, 0.5], [-0.49, 0.44], [-0.5, 0.36]];
+const CAR_GLASS_PTS = [[-0.3, 0.5], [-0.14, 0.86], [0.12, 0.86], [0.3, 0.52]];
+const CAB_PTS = [[-0.5, 0.12], [0.5, 0.12], [0.5, 0.66], [0.46, 0.9], [0.34, 0.96], [-0.5, 0.96]];
+const BUS_PTS = [[-0.5, 0.1], [0.5, 0.1], [0.5, 0.82], [0.46, 0.94], [0.38, 0.98], [-0.38, 0.98], [-0.46, 0.94], [-0.5, 0.82]];
+const GEO = {
+  box: new THREE.BoxGeometry(1, 1, 1),
+  cyl: new THREE.CylinderGeometry(1, 1, 1, 10),
+  cone: new THREE.ConeGeometry(1, 1, 10),
+  sph: new THREE.SphereGeometry(1, 8, 6),
+  cap: new THREE.CapsuleGeometry(0.5, 1, 2, 6),
+  tire: new THREE.CylinderGeometry(1, 1, 1, 12),
+  gable: makeGable(),
+  cloth: makeCloth(),
+  leafBlob: noisyBlob(1, 0.2, 321),
+  rock: noisyBlob(1, 0.3, 311),
+  carBody: makeProfile(CAR_BODY_PTS, 0.05),
+  carGlass: makeProfile(CAR_GLASS_PTS, 0.02),
+  truckCab: makeProfile(CAB_PTS, 0.04),
+  bus: makeProfile(BUS_PTS, 0.05),
+};
+// Drehkoerper (Lathe): Punkte [Radius, Hoehe] mit Hoehe 0..1
+const LATHE = {};
+function lathe(name, pts) { LATHE[name] = new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), 16); }
+lathe('barrel', [[0.8, 0], [0.9, 0.06], [1, 0.5], [0.9, 0.94], [0.8, 1]]);
+lathe('pole', [[0.55, 0], [0.6, 0.03], [0.42, 0.08], [0.3, 0.18], [0.2, 0.3], [0.18, 1]]);
+lathe('cone', [[1, 0], [0.9, 0.04], [0.45, 0.5], [0.12, 0.9], [0.02, 1]]);
+lathe('basin', [[1, 0], [1, 0.3], [0.92, 0.32], [0.92, 0.42], [0.7, 0.46], [0.7, 0.5]]);
+lathe('trunk', [[1, 0], [0.8, 0.45], [0.55, 1]]);
+lathe('spout', [[0.5, 0], [0.32, 0.6], [0.16, 1]]);
+lathe('column', [[0.9, 0], [0.75, 0.08], [0.6, 0.12], [0.5, 0.85], [0.6, 0.92], [0.45, 1]]);
+
+// ===================== Statische Optik: pro Textur zu einem Mesh zusammengefasst =====================
+const _tc = new Map();
+function tintOf(h) { let c = _tc.get(h); if (!c) { c = new THREE.Color(h); _tc.set(h, c); } return c; }
 const BUCKETS = new Map();
-function bucket(color) {
-  let b = BUCKETS.get(color);
-  if (!b) { b = { pos: [], nrm: [], idx: [], n: 0 }; BUCKETS.set(color, b); }
+function bucket(tex) {
+  let b = BUCKETS.get(tex);
+  if (!b) { b = { pos: [], nrm: [], uv: [], col: [], idx: [], n: 0 }; BUCKETS.set(tex, b); }
   return b;
 }
-const SHAPES = {
-  box: new THREE.BoxGeometry(1, 1, 1),
-  cyl: new THREE.CylinderGeometry(1, 1, 1, 8),
-  cone: new THREE.ConeGeometry(1, 1, 8),
-  sph: new THREE.SphereGeometry(1, 8, 6),
-};
 const _M = new THREE.Matrix4(), _P = new THREE.Vector3(), _S = new THREE.Vector3(), _Q = new THREE.Quaternion();
 const _E = new THREE.Euler(0, 0, 0, 'YXZ'), _V = new THREE.Vector3(), _N = new THREE.Vector3();
-// Reines Aussehen, ohne Kollision (Mittelpunkt x,y,z; Groesse sx,sy,sz; ry = Drehung um Y)
-function vis(shape, color, x, y, z, sx, sy, sz, ry = 0) {
-  const g = SHAPES[shape];
-  _P.set(x, y, z); _S.set(sx, sy, sz); _E.set(0, ry, 0); _Q.setFromEuler(_E);
+// Vorlage g mit Textur tex und Farbe tint an Position setzen. Drehung rx, ry, rz (Radiant).
+// ao = Bodenabdunklung (aus fuer flache Flaechen wie Strassen).
+function put(tex, tint, g, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0, ao = true) {
+  _E.set(rx, ry, rz); _Q.setFromEuler(_E); _P.set(x, y, z); _S.set(sx, sy, sz);
   _M.compose(_P, _Q, _S);
-  const b = bucket(color);
-  const pa = g.attributes.position.array, na = g.attributes.normal.array, ia = g.index.array;
-  const base = b.n;
-  for (let i = 0; i < pa.length; i += 3) {
-    _V.set(pa[i], pa[i + 1], pa[i + 2]).applyMatrix4(_M);
+  const b = bucket(tex);
+  const pa = g.attributes.position.array, na = g.attributes.normal.array;
+  const ia = g.index ? g.index.array : null;
+  const count = pa.length / 3, base = b.n, tc = tintOf(tint), tt = TILE[tex] || 1;
+  for (let i = 0; i < count; i++) {
+    _V.set(pa[3 * i], pa[3 * i + 1], pa[3 * i + 2]).applyMatrix4(_M);
+    _N.set(na[3 * i], na[3 * i + 1], na[3 * i + 2]).transformDirection(_M);
     b.pos.push(_V.x, _V.y, _V.z);
-    _N.set(na[i], na[i + 1], na[i + 2]).transformDirection(_M);
     b.nrm.push(_N.x, _N.y, _N.z);
+    // Weltkoordinaten-UV: Ebene nach der staerksten Normalenrichtung
+    const ax = Math.abs(_N.x), ay = Math.abs(_N.y), az = Math.abs(_N.z);
+    let u, v;
+    if (ay >= ax && ay >= az) { u = _V.x; v = _V.z; }
+    else if (ax >= az) { u = _V.z; v = _V.y; }
+    else { u = _V.x; v = _V.y; }
+    b.uv.push(u / tt, v / tt);
+    const k = ao ? 0.5 + 0.5 * clamp(_V.y / 2.2, 0, 1) : 1;
+    b.col.push(tc.r * k, tc.g * k, tc.b * k);
   }
-  for (let i = 0; i < ia.length; i++) b.idx.push(ia[i] + base);
-  b.n += pa.length / 3;
+  if (ia) for (let i = 0; i < ia.length; i++) b.idx.push(ia[i] + base);
+  else for (let i = 0; i < count; i++) b.idx.push(base + i);
+  b.n += count;
 }
 function flushVisuals() {
-  for (const [color, b] of BUCKETS) {
+  for (const [tex, b] of BUCKETS) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(b.nrm, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
     g.setIndex(b.idx);
-    const m = new THREE.Mesh(g, mat(color, 0.88));
-    m.castShadow = true;
+    const m = new THREE.Mesh(g, MATS[tex]);
+    m.castShadow = tex !== 'leaf';
     m.receiveShadow = true;
     scene.add(m);
   }
@@ -449,10 +640,13 @@ function flushVisuals() {
 
 // ===================== Kollision (Quader als AABB) =====================
 const solids = [];
-// Solider Quader: Optik + Kollision. baseY = Unterkante (z.B. Dach ab 3.2 m)
-function solid(cx, cz, sx, h, sz, color, baseY = 0) {
-  vis('box', color, cx, baseY + h / 2, cz, sx, h, sz);
+function coll(cx, cz, sx, h, sz, baseY = 0) {
   solids.push({ minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, minY: baseY, maxY: baseY + h });
+}
+// Solider Quader mit Box-Optik (Standard-Textur)
+function solid(cx, cz, sx, h, sz, tint, baseY = 0, tex = 'plaster') {
+  put(tex, tint, GEO.box, cx, baseY + h / 2, cz, sx, h, sz);
+  coll(cx, cz, sx, h, sz, baseY);
 }
 function circleTouches(x, z, r, b) {
   const cx = clamp(x, b.minX, b.maxX), cz = clamp(z, b.minZ, b.maxZ);
@@ -487,122 +681,148 @@ function resolveHorizontal(p, stepOK) {
   }
 }
 
-// ===================== Karte: Bauteile (Gebaeude, Fahrzeuge, Container, Tuerme) =====================
-function container(x, z, rot, color, baseY = 0) {
-  const sx = rot ? 2.5 : 6, sz = rot ? 6 : 2.5;
-  solid(x, z, sx, 2.6, sz, color, baseY);
-  for (let k = -2; k <= 2; k++) {   // Wellblech-Rillen (nur Optik)
-    if (rot) vis('box', 0x2a2c2e, x + sx / 2 + 0.03, baseY + 1.3, z + k * 1.05, 0.06, 2.4, 0.12);
-    else vis('box', 0x2a2c2e, x + k * 1.05, baseY + 1.3, z + sz / 2 + 0.03, 0.12, 2.4, 0.06);
+// ===================== Farben (Tints) =====================
+const C = {
+  asphalt: 0x4a4b4e, paint: 0xe8e4d2, sidewalk: 0xb4b0a6, concrete: 0xb7b3a7, concreteDark: 0x8e8a80, step: 0x9d9a90,
+  brick: 0xa8654a, wall: 0xc9c1b0, roofDark: 0x4a4f55, glass: 0x2a3a46, rust: 0x9a5a34, olive: 0x56633f, grey: 0x5d6a74,
+  grey2: 0x6f767c, sand: 0xc9b58a, hesco: 0x8a7d5e, jersey: 0xc2bfb4, wood: 0xa07a4f, barrel: 0x3f6b4a,
+  pole: 0x5a5e62, rail: 0x5c5f63, tire: 0x222222, carRed: 0x9c2a22, carWhite: 0xd9d9d2, carBlue: 0x2e5088,
+  carGrey: 0x66707a, bus: 0xe0a72e, truckGrey: 0x6f7478, white: 0xe6e3d8,
+};
+
+// ===================== Gelaende: flacher Stadtkern, Huegel aussen =====================
+function groundAt(x, z) {
+  const ax = Math.max(0, Math.abs(x) - CORE_X), az = Math.max(0, Math.abs(z) - CORE_Z);
+  const m = clamp(Math.hypot(ax, az) / 10, 0, 1);
+  if (m <= 0) return 0;
+  const h = Math.sin(x * 0.085) * 1.5 + Math.cos(z * 0.11 + 1.3) * 1.3 + Math.sin((x + z) * 0.05) * 1.1;
+  return h * m;
+}
+const PARKS = [[-72, -50, 8], [72, 50, 8], [-30, -58, 6], [30, 58, 6], [-70, 48, 6], [70, -48, 6]];
+function inPark(x, z) { return PARKS.some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r); }
+function makeTerrain() {
+  const g = new THREE.PlaneGeometry(MAP_X * 2, MAP_Z * 2, 130, 90);
+  g.rotateX(-Math.PI / 2);
+  const pos = g.attributes.position, cols = new Float32Array(pos.count * 3);
+  const cA = new THREE.Color(), cB = new THREE.Color(), cc = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const y = groundAt(x, z);
+    pos.setY(i, y);
+    const n = 0.5 + 0.5 * Math.sin(x * 1.3 + Math.sin(z * 0.7) * 2.0) * Math.cos(z * 1.1 - x * 0.37);
+    const inCore = Math.abs(x) <= CORE_X && Math.abs(z) <= CORE_Z;
+    if (inCore) {
+      if (inPark(x, z)) { cA.set(0x7a9a4c); cB.set(0x5f7f3a); }
+      else { cA.set(0xa9a69c); cB.set(0x8f8c83); }
+    } else {
+      cA.set(0x6a8a48); cB.set(0x8a7650);
+    }
+    cc.copy(cA).lerp(cB, n * 0.6);
+    cols[i * 3] = cc.r; cols[i * 3 + 1] = cc.g; cols[i * 3 + 2] = cc.b;
   }
+  g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  g.computeVertexNormals();
+  const grass = makeTexture(128, TEXF.grass);
+  grass.repeat.set(MAP_X * 2 / 6, MAP_Z * 2 / 6);
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: grass, vertexColors: true, roughness: 1, envMapIntensity: 0.4 }));
+  m.receiveShadow = true;
+  scene.add(m);
 }
-// Raeder (nur Optik): rot = 0 -> Fahrzeug laeuft entlang x, rot = 1 -> entlang z
-function wheels(x, z, rot, L, W) {
-  for (const a of [-1, 1]) for (const b of [-1, 1]) {
-    const ox = rot ? b * (W / 2 + 0.02) : a * (L / 2 - 1.0);
-    const oz = rot ? a * (L / 2 - 1.0) : b * (W / 2 + 0.02);
-    vis('box', C.tire, x + ox, 0.32, z + oz, rot ? 0.28 : 0.7, 0.62, rot ? 0.7 : 0.28);
-  }
-}
-function car(x, z, rot, color) {
-  const L = 4.3, W = 1.9;
-  const sx = rot ? W : L, sz = rot ? L : W;
-  solid(x, z, sx, 0.75, sz, color, 0.2);                 // Karosserie
-  solid(x, z, sx * 0.62, 0.6, sz * 0.8, 0x2c3440, 0.95); // Kabine
-  wheels(x, z, rot, L, W);
-}
-function truck(x, z, rot, color) {
-  const W = 2.4;
-  const part = (o, len, h, y0, col) => {
-    const sx = rot ? W : len, sz = rot ? len : W;
-    solid(rot ? x : x + o, rot ? z + o : z, sx, h, sz, col, y0);
-  };
-  part(-1.2, 4.6, 2.9, 0.25, color);     // Laderaum
-  part(2.2, 2.2, 1.7, 0.25, 0xd9d6cf);   // Fahrerhaus
-  wheels(x, z, rot, 6.8, W);
-}
-function bus(x, z, rot, color) {
-  const L = 10, W = 2.6;
-  const sx = rot ? W : L, sz = rot ? L : W;
-  solid(x, z, sx, 3.0, sz, color, 0.25);
-  for (let k = -3; k <= 3; k++) {        // Fensterband (nur Optik)
-    if (rot) vis('box', C.glass, x + W / 2 + 0.02, 1.9, z + k * 1.2, 0.04, 0.9, 0.9);
-    else vis('box', C.glass, x + k * 1.2, 1.9, z + W / 2 + 0.02, 0.9, 0.9, 0.04);
-  }
-  wheels(x, z, rot, L, W);
-}
-// Gebaeude mit Tuer, Dach, Fenstern, Innenwand und Einrichtung.
-// door = Seite mit Tuer ('n','s','e','w'); opts.partition = Innenwand; opts.stairs = Seite mit Treppe aufs Dach
+
+// ===================== Karte: Gebaeude (einstoeckig), Container, Wachturm =====================
+// Einstoeckiges Haus mit Giebeldach, Tuer, Fenstern, Schornstein und Innenwand
 function house(x, z, w, d, h, wallC, roofC, door = 's', opts = {}) {
   const t = 0.35, hw = w / 2, hd = d / 2, GAP = 1.7, DH = 2.3;
-  const alongX = (zc, hasDoor) => {          // Wand parallel zur x-Achse
-    if (!hasDoor) { solid(x, zc, w, h, t, wallC); return; }
+  const tex = opts.tex || 'plaster';
+  const alongX = (zc, hasDoor) => {
+    if (!hasDoor) { solid(x, zc, w, h, t, wallC, 0, tex); return; }
     const seg = (w - GAP) / 2;
-    solid(x - hw + seg / 2, zc, seg, h, t, wallC);
-    solid(x + hw - seg / 2, zc, seg, h, t, wallC);
-    solid(x, zc, GAP, h - DH, t, wallC, DH);   // Sturz ueber der Tuer
+    solid(x - hw + seg / 2, zc, seg, h, t, wallC, 0, tex);
+    solid(x + hw - seg / 2, zc, seg, h, t, wallC, 0, tex);
+    solid(x, zc, GAP, h - DH, t, wallC, DH, tex);
   };
-  const alongZ = (xc, hasDoor) => {          // Wand parallel zur z-Achse
-    if (!hasDoor) { solid(xc, z, t, h, d, wallC); return; }
+  const alongZ = (xc, hasDoor) => {
+    if (!hasDoor) { solid(xc, z, t, h, d, wallC, 0, tex); return; }
     const seg = (d - GAP) / 2;
-    solid(xc, z - hd + seg / 2, t, h, seg, wallC);
-    solid(xc, z + hd - seg / 2, t, h, seg, wallC);
-    solid(xc, z, t, h - DH, GAP, wallC, DH);
+    solid(xc, z - hd + seg / 2, t, h, seg, wallC, 0, tex);
+    solid(xc, z + hd - seg / 2, t, h, seg, wallC, 0, tex);
+    solid(xc, z, t, h - DH, GAP, wallC, DH, tex);
   };
   alongX(z - hd + t / 2, door === 'n');
   alongX(z + hd - t / 2, door === 's');
   alongZ(x - hw + t / 2, door === 'w');
   alongZ(x + hw - t / 2, door === 'e');
-  solid(x, z, w, 0.3, d, roofC, h);          // Dach
-  if (opts.partition) {                      // Innenwand mit Tuer
+  // Sockel, Dachkante und Giebeldach
+  put('concrete', 0x8e8a80, GEO.box, x, 0.12, z, w + 0.1, 0.24, d + 0.1);
+  put('plain', 0xd9d4c6, GEO.box, x, h + 0.05, z, w + 0.2, 0.1, d + 0.2);
+  const rr = d >= w;
+  put('roof', roofC, GEO.gable, x, h + 0.1, z, rr ? w + 0.8 : d + 0.8, 1.8, rr ? d + 0.8 : w + 0.8, 0, rr ? 0 : Math.PI / 2, 0);
+  // Schornstein
+  put('brick', 0x7a4a3a, GEO.box, x + w * 0.22, h + 1.2, z - d * 0.15, 0.6, 1.6, 0.6);
+  put('metal', 0x6d6d6d, GEO.box, x + w * 0.22, h + 2.05, z - d * 0.15, 0.7, 0.1, 0.7);
+  facadeDetail(x, z, w, d, 1, door, null, h);
+  if (opts.ac) propAC(x - w * 0.3, 2.3, z + hd, true, 1);
+  if (opts.partition) {                                   // Innenwand mit Tuer
     const px = x + w * 0.16, seg = (d - GAP) / 2;
-    solid(px, z - hd + seg / 2, t, h, seg, wallC);
-    solid(px, z + hd - seg / 2, t, h, seg, wallC);
-    solid(px, z, t, h - DH, GAP, wallC, DH);
+    solid(px, z - hd + seg / 2, t, h, seg, wallC, 0, tex);
+    solid(px, z + hd - seg / 2, t, h, seg, wallC, 0, tex);
+    solid(px, z, t, h - DH, GAP, wallC, DH, tex);
   }
-  solid(x - w * 0.25, z + hd * 0.45, 1.5, 0.8, 0.8, 0x6b4f33);   // Tisch
-  solid(x + w * 0.25, z - hd * 0.55, 1.6, 1.8, 0.4, 0x4a4a48);   // Regal
-  for (const [side, zo] of [['n', z - hd - 0.02], ['s', z + hd + 0.02]]) {   // Fenster (nur Optik)
-    if (door === side || opts.stairs === side) continue;
-    for (const f of [-0.28, 0.28]) vis('box', C.glass, x + w * f, 1.9, zo, 1.2, 1.0, 0.05);
-  }
-  for (const [side, xo] of [['w', x - hw - 0.02], ['e', x + hw + 0.02]]) {
-    if (door === side || opts.stairs === side) continue;
-    for (const f of [-0.28, 0.28]) vis('box', C.glass, xo, 1.9, z + d * f, 0.05, 1.0, 1.2);
-  }
-  if (opts.stairs) roofStairs(x, z, w, d, h, opts.stairs, roofC);
-}
-// Treppe aus Stufen von aussen aufs Dach (Stufen 0.4 m hoch, obere Stufe liegt an der Wand)
-function roofStairs(x, z, w, d, h, side, color) {
-  const n = Math.round(h / 0.4), hs = h / n, W = 2.4, hw = w / 2, hd = d / 2;
-  for (let i = 0; i < n; i++) {
-    const D = 0.25 + (n - 1 - i) * 0.5;
-    const hh = (i + 1) * hs;
-    if (side === 's') solid(x + w * 0.25, z + hd + D, W, hh, 0.5, color);
-    else if (side === 'n') solid(x + w * 0.25, z - hd - D, W, hh, 0.5, color);
-    else if (side === 'e') solid(x + hw + D, z + d * 0.25, 0.5, hh, W, color);
-    else solid(x - hw - D, z + d * 0.25, 0.5, hh, W, color);
-  }
-}
-// Wachturm: Plattform (3.6 m) mit Treppe auf einer Seite (s = -1 West, +1 Ost) und Gelaender
-function watchtower(x, z, s) {
-  const PH = 3.6;
-  solid(x, z, 4.3, PH, 4.0, C.concrete);
-  for (let i = 0; i < 8; i++) {
-    const d = 2.15 + 0.25 + (7 - i) * 0.5;
-    solid(x + s * d, z, 0.5, 0.45 * (i + 1), 2.6, C.step);
-  }
-  solid(x - s * 2.05, z, 0.25, 0.9, 4.0, C.rail, PH);
-  solid(x, z - 1.9, 4.3, 0.9, 0.25, C.rail, PH);
-  solid(x, z + 1.9, 4.3, 0.9, 0.25, C.rail, PH);
+  solid(x - w * 0.25, z + hd * 0.45, 1.5, 0.8, 0.8, 0x6b4f33, 0, 'wood');     // Tisch
+  solid(x + w * 0.25, z - hd * 0.55, 1.6, 1.8, 0.4, 0x4a4a48, 0, 'metal');    // Regal
 }
 
-// Zweigeschossiges Gebaeude: Erdgeschoss mit Tuer, Treppe links innen, Obergeschoss mit Fenstern, Flachdach.
+// Container (Wellblech) mit Tuer am offenen Ende
+function container(x, z, rot, tint, baseY = 0) {
+  const sx = rot ? 2.5 : 6, sz = rot ? 6 : 2.5;
+  put('corrugated', tint, GEO.box, x, baseY + 1.3, z, sx, 2.6, sz);
+  coll(x, z, sx, 2.6, sz, baseY);
+  const ex = rot ? x : x + sx / 2 + 0.02, ez = rot ? z + sz / 2 + 0.02 : z;
+  put('metal', 0x6e7174, GEO.box, ex, baseY + 1.3, ez, rot ? 2.2 : 0.03, 2.4, rot ? 0.03 : 2.2);
+  put('metal', 0x4a4e52, GEO.box, ex + (rot ? 0 : 0.02), baseY + 1.3, ez + (rot ? 0.02 : 0), rot ? 0.06 : 0.05, 0.12, rot ? 0.05 : 0.6);
+  put('metal', 0x3a3e42, GEO.box, x, baseY + 2.65, z, sx * 1.01, 0.1, sz * 1.01);   // Dachrand
+}
+// Wachturm: Stahlgeruest, Plattform mit Gitter, Treppe, Gelaender, Dach
+function watchtower(x, z, s) {
+  const PH = 3.6;
+  for (const [cx, cz] of [[-1.9, -1.9], [1.9, -1.9], [-1.9, 1.9], [1.9, 1.9]]) {
+    put('metal', 0x4b4f53, GEO.cyl, x + cx, PH + 0.4, z + cz, 0.08, PH + 0.8, 0.08);
+  }
+  for (const yb of [1.1, 2.4]) {
+    put('metal', 0x4b4f53, GEO.box, x, yb, z - 1.9, 3.9, 0.07, 0.07);
+    put('metal', 0x4b4f53, GEO.box, x, yb, z + 1.9, 3.9, 0.07, 0.07);
+    put('metal', 0x4b4f53, GEO.box, x - 1.9, yb, z, 0.07, 0.07, 3.9);
+    put('metal', 0x4b4f53, GEO.box, x + 1.9, yb, z, 0.07, 0.07, 3.9);
+  }
+  put('mesh', 0x6d7278, GEO.box, x, PH + 0.04, z, 4.3, 0.08, 4.1);            // Plattform-Gitter
+  for (let i = 0; i < 8; i++) {                                              // Treppe
+    const d = 2.15 + 0.25 + (7 - i) * 0.5;
+    const hh = 0.45 * (i + 1);
+    put('mesh', 0x6d7278, GEO.box, x + s * d, hh / 2, z, 0.5, hh, 2.6);
+    coll(x + s * d, z, 0.5, hh, 2.6, 0);
+  }
+  coll(x, z, 4.3, PH, 4.0, 0);
+  // Gelaender (Kollision): Rueckseite und Seiten
+  coll(x - s * 2.05, z, 0.25, 0.9, 4.0, PH);
+  coll(x, z - 1.9, 4.3, 0.9, 0.25, PH);
+  coll(x, z + 1.9, 4.3, 0.9, 0.25, PH);
+  for (const [sx2, sz2] of [[-s * 2.05, 0], [0, -1.9], [0, 1.9]]) {
+    put('metal', 0x5c5f63, GEO.box, x + sx2, PH + 0.45, z + sz2, sx2 ? 0.1 : 4.3, 0.08, sx2 ? 4.0 : (sz2 ? 0.1 : 0.1));
+    put('metal', 0x5c5f63, GEO.box, x + sx2, PH + 0.9, z + sz2, sx2 ? 0.1 : 4.3, 0.06, sx2 ? 4.0 : 0.1);
+  }
+  put('roof', 0x3e4449, GEO.gable, x, PH + 1.9, z, 4.8, 1.0, 4.8);            // Dach
+  for (const [cx, cz] of [[-1.9, -1.9], [1.9, -1.9], [-1.9, 1.9], [1.9, 1.9]]) {
+    put('metal', 0x4b4f53, GEO.cyl, x + cx, PH + 0.95, z + cz, 0.06, 0.95, 0.06);
+  }
+}
+
+// Zweigeschossiges Gebaeude: Erdgeschoss mit Tuer, Treppe links innen, Obergeschoss mit Balkon, Giebeldach.
 // door = 'n', 's' oder 'e' (nicht 'w', dort steht die Treppe)
 function house2(x, z, w, d, door = 's', opts = {}) {
   const t = 0.35, hw = w / 2, hd = d / 2, GAP = 1.7, DH = 2.3;
   const H1 = 3.2, FT = 0.3, WH = H1 + FT;          // Geschosshoehe, Deckenstaerke, Wandhoehe Erdgeschoss
   const wallC = opts.wall ?? C.wall, roofC = opts.roof ?? C.roofDark;
+  const tex = opts.tex || 'plaster';
   const wallSet = (base, hh, doorSide) => {
     const runs = [
       { ax: 'x', c: z - hd + t / 2, side: 'n' }, { ax: 'x', c: z + hd - t / 2, side: 's' },
@@ -610,17 +830,17 @@ function house2(x, z, w, d, door = 's', opts = {}) {
     ];
     for (const r of runs) {
       if (r.ax === 'x') {
-        if (doorSide !== r.side) { solid(x, r.c, w, hh, t, wallC, base); continue; }
+        if (doorSide !== r.side) { solid(x, r.c, w, hh, t, wallC, base, tex); continue; }
         const seg = (w - GAP) / 2;
-        solid(x - hw + seg / 2, r.c, seg, hh, t, wallC, base);
-        solid(x + hw - seg / 2, r.c, seg, hh, t, wallC, base);
-        solid(x, r.c, GAP, hh - DH, t, wallC, base + DH);
+        solid(x - hw + seg / 2, r.c, seg, hh, t, wallC, base, tex);
+        solid(x + hw - seg / 2, r.c, seg, hh, t, wallC, base, tex);
+        solid(x, r.c, GAP, hh - DH, t, wallC, base + DH, tex);
       } else {
-        if (doorSide !== r.side) { solid(r.c, z, t, hh, d, wallC, base); continue; }
+        if (doorSide !== r.side) { solid(r.c, z, t, hh, d, wallC, base, tex); continue; }
         const seg = (d - GAP) / 2;
-        solid(r.c, z - hd + seg / 2, t, hh, seg, wallC, base);
-        solid(r.c, z + hd - seg / 2, t, hh, seg, wallC, base);
-        solid(r.c, z, t, hh - DH, GAP, wallC, base + DH);
+        solid(r.c, z - hd + seg / 2, t, hh, seg, wallC, base, tex);
+        solid(r.c, z + hd - seg / 2, t, hh, seg, wallC, base, tex);
+        solid(r.c, z, t, hh - DH, GAP, wallC, base + DH, tex);
       }
     }
   };
@@ -628,49 +848,255 @@ function house2(x, z, w, d, door = 's', opts = {}) {
   wallSet(WH, H1, null);           // Obergeschoss (keine Tuer, nur ueber die Treppe)
   // Treppe an der linken Innenwand: 8 Stufen, je 0.5 m lang, 0.4 m hoch
   const x0 = x - hw + t;
-  for (let i = 0; i < 8; i++) solid(x0 + 0.25 + i * 0.5, z, 0.5, 0.4 * (i + 1), 2.4, C.step);
+  for (let i = 0; i < 8; i++) solid(x0 + 0.25 + i * 0.5, z, 0.5, 0.4 * (i + 1), 2.4, C.step, 0, 'concrete');
   // Decke des Obergeschosses mit Treppenloch
   const sx0 = x0 + 4.0, sx1 = x + hw - t;
-  solid((sx0 + sx1) / 2, z, sx1 - sx0, FT, d - 2 * t, 0x8a8478, H1);
-  // Flachdach
-  solid(x, z, w, 0.3, d, roofC, WH + H1);
-  // Einrichtung im Obergeschoss
-  solid(x + w * 0.2, z - hd * 0.3, 1.4, 0.7, 0.8, 0x6b4f33, WH);
-  solid(x - w * 0.1, z + hd * 0.4, 1.6, 1.8, 0.4, 0x4a4a48, WH);
-  solid(x + w * 0.25, z + hd * 0.3, 1.6, 0.9, 0.6, 0x5a5448, WH);
-  // Fenster (nur Optik), im Erdgeschoss nicht neben der Tuer
-  for (const hgt of [1.9, 5.4]) {
-    const low = hgt < 3;
-    for (const f of [-0.28, 0.28]) {
-      if (!(low && door === 'n')) vis('box', C.glass, x + w * f, hgt, z - hd - 0.02, 1.2, 1.0, 0.05);
-      if (!(low && door === 's')) vis('box', C.glass, x + w * f, hgt, z + hd + 0.02, 1.2, 1.0, 0.05);
-      if (!(low && door === 'w')) vis('box', C.glass, x - hw - 0.02, hgt, z + d * f, 0.05, 1.0, 1.2);
-      if (!(low && door === 'e')) vis('box', C.glass, x + hw + 0.02, hgt, z + d * f, 0.05, 1.0, 1.2);
+  solid((sx0 + sx1) / 2, z, sx1 - sx0, FT, d - 2 * t, 0x9a968c, H1, 'concrete');
+  // Sockel, Dachkante und Giebeldach
+  put('concrete', 0x8e8a80, GEO.box, x, 0.12, z, w + 0.1, 0.24, d + 0.1);
+  put('plain', 0xd9d4c6, GEO.box, x, WH + H1 + 0.05, z, w + 0.2, 0.1, d + 0.2);
+  const rr = d >= w;
+  put('roof', roofC, GEO.gable, x, WH + H1 + 0.1, z, rr ? w + 0.8 : d + 0.8, 2.4, rr ? d + 0.8 : w + 0.8, 0, rr ? 0 : Math.PI / 2, 0);
+  put('brick', 0x7a4a3a, GEO.box, x - w * 0.25, WH + H1 + 1.6, z + d * 0.2, 0.6, 2.0, 0.6);   // Schornstein
+  put('metal', 0x6d6d6d, GEO.box, x - w * 0.25, WH + H1 + 2.65, z + d * 0.2, 0.7, 0.1, 0.7);
+  // Fassade: Fenster in zwei Geschossen, Tuer, Balkon, Klimageraet
+  facadeDetail(x, z, w, d, 2, door, 'w', WH + H1);
+  balconyAt(x, z, w, d, door);
+  propAC(x + w * 0.3, 6.3, z - hd, true, -1);
+  // Einrichtung im Obergeschoss (Kollision)
+  solid(x + w * 0.2, z - hd * 0.3, 1.4, 0.7, 0.8, 0x6b4f33, WH, 'wood');
+  solid(x - w * 0.1, z + hd * 0.4, 1.6, 1.8, 0.4, 0x4a4a48, WH, 'metal');
+  solid(x + w * 0.25, z + hd * 0.3, 1.6, 0.9, 0.6, 0x5a5448, WH, 'wood');
+}
+
+// ===================== Modelle: Fassaden, Fahrzeuge, Natur, Requisiten =====================
+// Fenster an einer Fassade. alongX = Wand liegt in x-Richtung, o = Richtung nach aussen (-1 / +1)
+function winAt(cx, cy, cz, alongX, o) {
+  const fw = alongX ? 1.3 : 0.06, fd = alongX ? 0.06 : 1.3;
+  put('plain', 0xdcd6c8, GEO.box, cx + (alongX ? 0 : o * 0.03), cy, cz + (alongX ? o * 0.03 : 0), fw, 1.2, fd);     // Rahmen
+  const gw = alongX ? 1.05 : 0.02, gd = alongX ? 0.02 : 1.05;
+  put('glass', 0x2a3a46, GEO.box, cx + (alongX ? 0 : o * 0.075), cy, cz + (alongX ? o * 0.075 : 0), gw, 0.95, gd);  // Glas
+  put('concrete', 0xb9b4a8, GEO.box, cx + (alongX ? 0 : o * 0.05), cy - 0.66, cz + (alongX ? o * 0.05 : 0), fw + 0.14, 0.08, fd + 0.12); // Sims
+}
+// Tuer mit Zarge, Blatt, Griff, Stufe und Vordach
+function doorAt(cx, cz, alongX, o, wide = 1.1, tall = 2.1) {
+  const ox = alongX ? 0 : o, oz = alongX ? o : 0;
+  const rw = alongX ? wide + 0.4 : 0.06, rd = alongX ? 0.06 : wide + 0.4;
+  put('plain', 0xe0dace, GEO.box, cx + ox * 0.025, tall / 2 + 0.05, cz + oz * 0.025, rw, tall + 0.2, rd);
+  const pw = alongX ? wide : 0.05, pd = alongX ? 0.05 : wide;
+  put('wood', 0x6b4a2e, GEO.box, cx + ox * 0.06, tall / 2, cz + oz * 0.06, pw, tall, pd);
+  put('metal', 0xc8c2ae, GEO.sph, cx + ox * 0.11 + (alongX ? wide * 0.34 : 0), 1.0, cz + oz * 0.11 + (alongX ? 0 : wide * 0.34), 0.07, 0.07, 0.07);
+  put('concrete', 0xa8a396, GEO.box, cx + ox * 0.45, 0.07, cz + oz * 0.45, alongX ? wide + 0.5 : 0.8, 0.14, alongX ? 0.8 : wide + 0.5);
+  put('metal', 0x3b3f44, GEO.box, cx + ox * 0.4, tall + 0.3, cz + oz * 0.4, alongX ? wide + 0.6 : 0.7, 0.06, alongX ? 0.7 : wide + 0.6);
+}
+// Alle Fassaden eines Gebaeudes: Fenster je Geschoss, Tuer im Erdgeschoss, Eckpfosten
+function facadeDetail(x, z, w, d, floors, door, skipStairs, H) {
+  const hw = w / 2, hd = d / 2;
+  const faces = [
+    { side: 'n', alongX: true, fz: z - hd, o: -1 },
+    { side: 's', alongX: true, fz: z + hd, o: 1 },
+    { side: 'w', alongX: false, fx: x - hw, o: -1 },
+    { side: 'e', alongX: false, fx: x + hw, o: 1 },
+  ];
+  for (const f of faces) {
+    for (let fl = 0; fl < floors; fl++) {
+      if (fl === 0 && (door === f.side || skipStairs === f.side)) continue;
+      const cy = fl * 3.5 + 1.75;
+      if (f.alongX) for (const k of [-0.27, 0.27]) winAt(x + k * w, cy, f.fz, true, f.o);
+      else for (const k of [-0.27, 0.27]) winAt(f.fx, cy, z + k * d, false, f.o);
     }
+    if (door === f.side) {
+      if (f.alongX) doorAt(x, f.fz, true, f.o);
+      else doorAt(f.fx, z, false, f.o);
+    }
+  }
+  for (const [cx, cz] of [[x - hw, z - hd], [x + hw, z - hd], [x - hw, z + hd], [x + hw, z + hd]]) {
+    put('plain', 0xd7d1c3, GEO.box, cx, H / 2, cz, 0.22, H, 0.22);
+  }
+}
+// Klimageraet an der Wand
+function propAC(x, y, z, alongX, o) {
+  put('metal', 0xc9ccd0, GEO.box, x + (alongX ? 0 : o * 0.25), y, z + (alongX ? o * 0.25 : 0), alongX ? 0.9 : 0.5, 0.6, alongX ? 0.5 : 0.9);
+  put('mesh', 0x6a6f74, GEO.box, x + (alongX ? 0 : o * 0.5), y, z + (alongX ? o * 0.5 : 0), alongX ? 0.8 : 0.02, 0.5, alongX ? 0.02 : 0.8);
+}
+// Balkon vor der Obergeschoss-Tuer mit Glasgelaender (nur Optik)
+function balconyAt(x, z, w, d, door) {
+  const Y = 3.5;
+  let cx, cz, sx, sz;
+  if (door === 'n') { cx = x; cz = z - d / 2 - 0.7; sx = 3.0; sz = 1.4; }
+  else if (door === 's') { cx = x; cz = z + d / 2 + 0.7; sx = 3.0; sz = 1.4; }
+  else { cx = x + w / 2 + 0.7; cz = z; sx = 1.4; sz = 3.0; }
+  put('concrete', 0xb3afa3, GEO.box, cx, Y - 0.07, cz, sx, 0.14, sz);
+  if (door === 'e') {
+    put('glass', 0x9fc6d8, GEO.box, cx + sx / 2, Y + 0.5, cz, 0.03, 1.0, sz);
+    for (const k of [-1, 1]) put('glass', 0x9fc6d8, GEO.box, cx, Y + 0.5, cz + k * sz / 2, sx, 1.0, 0.03);
+  } else {
+    put('glass', 0x9fc6d8, GEO.box, cx, Y + 0.5, door === 'n' ? cz - sz / 2 : cz + sz / 2, sx, 1.0, 0.03);
+    for (const k of [-1, 1]) put('glass', 0x9fc6d8, GEO.box, cx + k * sx / 2, Y + 0.5, cz, 0.03, 1.0, sz);
   }
 }
 
-// ===================== Karte: Deckung, Dekoration, Distrikte, Aufbau =====================
-// Deckung (ca. 1.15 m hoch): dahinter kann man sich ducken
-function cover(x, z, len, rot, color) {
-  if (rot) solid(x, z, 1.2, 1.15, len, color);
-  else solid(x, z, len, 1.15, 1.2, color);
+// ===================== Fahrzeuge (Karosserie als Profil, Raeder mit Felge) =====================
+// Rad: Reifen als Zylinder mit Felge; Achse entlang der Fahrzeugbreite (rot 0 = z, rot 1 = x)
+function wheelAt(wx, wz, rot, r, wid) {
+  const rx = rot ? 0 : Math.PI / 2, rz = rot ? Math.PI / 2 : 0;
+  put('rubber', 0x1c1c1c, GEO.tire, wx, r, wz, r, wid, r, rx, 0, rz);
+  put('metal', 0xa6abb0, GEO.cyl, wx, r, wz, r * 0.6, wid * 1.02, r * 0.6, rx, 0, rz);
 }
-function crate(x, z, s) { solid(x, z, s, s, s, C.wood); }
-function tree(x, z, gy, s, r) {          // Baum (nur Optik)
-  vis('cyl', 0x4d3b2a, x, gy + 1.2 * s, z, 0.28 * s, 2.4 * s, 0.28 * s);
-  const crown = [0x2f5a2b, 0x37692f, 0x46763a][Math.floor(r() * 3)];
-  vis('cone', crown, x, gy + 3.4 * s, z, 2.0 * s, 3.0 * s, 2.0 * s);
+// rot = 0: Fahrzeug laeuft entlang x, rot = 1: entlang z. a = Laengsrichtung, b = Querrichtung.
+function vehCar(x, z, rot, paint) {
+  const L = 4.3, W = 1.85, ry = rot ? Math.PI / 2 : 0;
+  const P = (a, b) => (rot ? [x + b, z + a] : [x + a, z + b]);
+  put('paint', paint, GEO.carBody, x, 0.22, z, L, 1.4, W, 0, ry, 0);
+  put('glass', 0x1c2630, GEO.carGlass, x, 0.22, z, L, 1.4, W * 0.9, 0, ry, 0);
+  for (const a of [-1.3, 1.3]) for (const b of [-0.84, 0.84]) {
+    const [wx, wz] = P(a, b);
+    wheelAt(wx, wz, rot, 0.3, 0.3);
+  }
+  for (const b of [-0.6, 0.6]) {
+    const [hx, hz] = P(L / 2 + 0.01, b);
+    put('plain', 0xfff2d0, GEO.box, hx, 0.86, hz, rot ? 0.26 : 0.05, 0.12, rot ? 0.05 : 0.26);
+    const [tx, tz] = P(-L / 2 - 0.01, b);
+    put('plain', 0xb81c1c, GEO.box, tx, 0.86, tz, rot ? 0.26 : 0.05, 0.12, rot ? 0.05 : 0.26);
+  }
+  const sx = rot ? W : L, sz = rot ? L : W;
+  coll(x, z, sx, 0.75, sz, 0.2);
+  coll(x, z, sx * 0.62, 0.6, sz * 0.8, 0.95);
 }
-function rock(x, z, gy, s) { vis('sph', 0x7b776d, x, gy + 0.35 * s, z, 1.5 * s, 0.9 * s, 1.3 * s); }
-function lamp(x, z) {                    // Laterne (nur Optik)
-  vis('cyl', C.pole, x, 2.5, z, 0.12, 5, 0.12);
-  vis('box', 0x3b3b3b, x + 0.4, 4.95, z, 0.9, 0.12, 0.25);
+function vehTruck(x, z, rot, cargoTint) {
+  const W = 2.4, ry = rot ? Math.PI / 2 : 0;
+  const P = (a, b) => (rot ? [x + b, z + a] : [x + a, z + b]);
+  const [cx, cz] = P(-1.2, 0);
+  const cargoSx = rot ? W : 4.6, cargoSz = rot ? 4.6 : W;
+  put('corrugated', cargoTint, GEO.box, cx, 0.25 + 1.45, cz, cargoSx, 2.9, cargoSz);
+  coll(cx, cz, cargoSx, 2.9, cargoSz, 0.25);
+  const [kx, kz] = P(2.2, 0);
+  const cabSx = rot ? W * 0.95 : 2.2, cabSz = rot ? 2.2 : W * 0.95;
+  put('paint', 0xd9d6cf, GEO.truckCab, kx, 0.22, kz, 2.2, 1.6, W * 0.95, 0, ry, 0);
+  coll(kx, kz, cabSx, 1.6, cabSz, 0.25);
+  const [gx, gz] = P(3.31, 0);
+  put('glass', 0x1c2630, GEO.box, gx, 1.05, gz, rot ? W * 0.8 : 0.05, 0.5, rot ? 0.05 : W * 0.8);
+  for (const a of [-2.2, 1.6]) for (const b of [-1.05, 1.05]) {
+    const [wx, wz] = P(a, b);
+    wheelAt(wx, wz, rot, 0.34, 0.34);
+  }
 }
-function flag(x, z, color) {             // Flagge / Objektiv-Markierung (nur Optik)
-  vis('cyl', C.pole, x, 2.1, z, 0.1, 4.2, 0.1);
-  vis('box', color, x + 0.6, 3.7, z, 1.2, 0.8, 0.05);
+function vehBus(x, z, rot, paint) {
+  const L = 10, W = 2.6, ry = rot ? Math.PI / 2 : 0;
+  const P = (a, b) => (rot ? [x + b, z + a] : [x + a, z + b]);
+  put('paint', paint, GEO.bus, x, 0.25, z, L, 2.9, W, 0, ry, 0);
+  for (const b of [-W / 2 - 0.01, W / 2 + 0.01]) for (let k = -3; k <= 3; k++) {
+    const [wx, wz] = P(k * 1.3, b);
+    put('glass', 0x243440, GEO.box, wx, 1.9, wz, rot ? 0.04 : 1.0, 0.9, rot ? 1.0 : 0.04);
+  }
+  for (const a of [-3.3, 3.3]) for (const b of [-1.1, 1.1]) {
+    const [wx, wz] = P(a, b);
+    wheelAt(wx, wz, rot, 0.36, 0.4);
+  }
+  coll(x, z, rot ? W : L, 2.9, rot ? L : W, 0.25);
 }
+
+// ===================== Natur =====================
+const FOLIAGE = [0x4f7a34, 0x5d8a3c, 0x46702f, 0x6a9342];
+function propTree(x, z, gy, s, r) {
+  put('bark', 0x5a4632, LATHE.trunk, x, gy, z, 0.3 * s, 2.6 * s, 0.3 * s);
+  if (r() < 0.6) {                                  // Laubbaum: drei Kronenhaufen
+    const c = FOLIAGE[Math.floor(r() * FOLIAGE.length)];
+    put('leaf', c, GEO.leafBlob, x, gy + 3.1 * s, z, 2.0 * s, 1.7 * s, 2.0 * s);
+    put('leaf', c, GEO.leafBlob, x + 0.9 * s, gy + 2.9 * s, z + 0.4 * s, 1.3 * s, 1.1 * s, 1.3 * s);
+    put('leaf', c, GEO.leafBlob, x - 0.8 * s, gy + 3.5 * s, z - 0.5 * s, 1.4 * s, 1.2 * s, 1.4 * s);
+  } else {                                          // Nadelbaum: gestapelte Kegel
+    const c = 0x2e4d2c;
+    put('leaf', c, GEO.cone, x, gy + 2.4 * s, z, 2.4 * s, 2.6 * s, 2.4 * s);
+    put('leaf', c, GEO.cone, x, gy + 3.9 * s, z, 1.8 * s, 2.2 * s, 1.8 * s);
+    put('leaf', c, GEO.cone, x, gy + 5.1 * s, z, 1.1 * s, 1.6 * s, 1.1 * s);
+  }
+}
+function propBush(x, z, gy, s, r) {
+  const c = FOLIAGE[Math.floor(r() * FOLIAGE.length)];
+  put('leaf', c, GEO.leafBlob, x, gy + 0.45 * s, z, 1.1 * s, 0.85 * s, 1.1 * s);
+  put('leaf', FOLIAGE[0], GEO.leafBlob, x + 0.5 * s, gy + 0.35 * s, z - 0.3 * s, 0.8 * s, 0.6 * s, 0.8 * s);
+}
+function propRock(x, z, gy, s, r) {
+  const c = [0x8a857a, 0x6f6b62, 0x9d9585][Math.floor(r() * 3)];
+  put('rock', c, GEO.rock, x, gy + 0.3 * s, z, 1.4 * s, 0.95 * s, 1.2 * s, r() * 0.6, r() * 3, r() * 0.6);
+}
+
+// ===================== Requisiten =====================
+function propLamp(x, z) {                          // Strassenlaterne
+  put('metal', 0x2d3136, LATHE.pole, x, 0, z, 0.2, 5.2, 0.2);
+  put('metal', 0x2d3136, GEO.cyl, x + 0.75, 5.05, z, 0.04, 1.5, 0.04, 0, 0, Math.PI / 2);
+  put('metal', 0x23272b, GEO.sph, x + 1.45, 4.92, z, 0.22, 0.1, 0.22);
+  put('plain', 0xfff0c8, GEO.sph, x + 1.45, 4.85, z, 0.14, 0.05, 0.14);
+}
+function propFlag(x, z, tint) {                    // Teamfahne
+  put('metal', 0x8f9396, LATHE.pole, x, 0, z, 0.12, 4.6, 0.12);
+  put('fabric', tint, GEO.cloth, x + 0.62, 3.7, z, 1.25, 0.85, 0.05);
+}
+function propCrate(x, z, s) {                      // Holzkiste mit Metallband
+  put('wood', 0xa67d4f, GEO.box, x, s / 2, z, s, s, s);
+  put('metal', 0x3a3e42, GEO.box, x, s * 0.5, z, s * 1.02, s * 0.08, s * 1.02);
+  put('metal', 0x3a3e42, GEO.box, x, s * 0.92, z, s * 1.02, s * 0.06, s * 1.02);
+}
+function propBarrel(x, z, s, tint = 0x3f6b4a) {    // Fass
+  put('metal', tint, LATHE.barrel, x, 0, z, 0.42 * s, 0.95 * s, 0.42 * s);
+  put('metal', 0x2a2d30, GEO.cyl, x, 0.2 * s, z, 0.44 * s, 0.05 * s, 0.44 * s);
+  put('metal', 0x2a2d30, GEO.cyl, x, 0.78 * s, z, 0.44 * s, 0.05 * s, 0.44 * s);
+}
+function propCone(x, z) {                          // Verkehrshuetchen
+  put('paint', 0xff6a1a, LATHE.cone, x, 0, z, 0.22, 0.7, 0.22);
+  put('plain', 0xf4f4f4, GEO.cyl, x, 0.38, z, 0.17, 0.1, 0.17);
+}
+// Sandsaecke: Kapseln in Lagen (Optik). Kollision liegt in cover().
+function propSandbags(x, z, len, rot, tint) {
+  const n = Math.max(2, Math.floor(len / 0.55));
+  for (let layer = 0; layer < 3; layer++) {
+    const shift = (layer % 2) * 0.5;
+    for (let i = 0; i < n - (layer % 2); i++) {
+      const a = -len / 2 + (i + 0.5 + shift) * (len / n);
+      const across = (layer % 2 ? 0.07 : -0.07) + (Math.random() - 0.5) * 0.03;
+      const y = 0.2 + layer * 0.3;
+      if (rot) put('fabric', tint, GEO.cap, x + across, y, z + a, 0.44, 0.25, 0.44, Math.PI / 2, 0, 0);
+      else put('fabric', tint, GEO.cap, x + a, y, z + across, 0.44, 0.25, 0.44, 0, 0, Math.PI / 2);
+    }
+  }
+}
+function propHesco(x, z, len, rot, tint) {        // Hesco-Korb mit Sandfuellung
+  const sx = rot ? 1.2 : len, sz = rot ? len : 1.2;
+  put('mesh', tint, GEO.box, x, 0.6, z, sx, 1.2, sz);
+  put('fabric', 0x7a6b4e, GEO.box, x, 1.22, z, sx * 0.92, 0.1, sz * 0.92);
+}
+function propBench(x, z, rot) {                   // Parkbank
+  const sx = rot ? 0.5 : 1.8, sz = rot ? 1.8 : 0.5;
+  put('wood', 0x8b6a45, GEO.box, x, 0.45, z, sx, 0.08, sz);
+  put('wood', 0x8b6a45, GEO.box, x + (rot ? 0.2 : 0), 0.78, z + (rot ? 0 : 0.2), rot ? 0.08 : sx, 0.5, rot ? sz : 0.08);
+  put('metal', 0x2a2e33, GEO.box, x - (rot ? 0 : sx * 0.4), 0.22, z - (rot ? sz * 0.4 : 0), 0.06, 0.44, 0.06);
+  put('metal', 0x2a2e33, GEO.box, x + (rot ? 0 : sx * 0.4), 0.22, z + (rot ? sz * 0.4 : 0), 0.06, 0.44, 0.06);
+}
+function propDumpster(x, z, rot) {                // Container-Muelltonne
+  const sx = rot ? 1.6 : 2.2, sz = rot ? 2.2 : 1.6;
+  put('corrugated', 0x2f6b3a, GEO.box, x, 0.55, z, sx, 1.1, sz);
+  put('metal', 0x23272b, GEO.box, x, 1.14, z, sx * 1.02, 0.08, sz * 1.02);
+  coll(x, z, sx, 1.1, sz, 0);
+}
+function propFountain(x, z) {                     // Brunnen auf dem Plaza
+  put('concrete', 0xb9b5aa, LATHE.basin, x, 0, z, 3.6, 0.5, 3.6);
+  put('water', 0x3f7fa8, GEO.cyl, x, 0.42, z, 3.1, 0.04, 3.1);
+  put('concrete', 0xb9b5aa, LATHE.column, x, 0.42, z, 0.5, 1.6, 0.5);
+  put('water', 0x6fb7e0, GEO.sph, x, 2.1, z, 0.22, 0.18, 0.22);
+  coll(x, z, 3.0, 0.5, 3.0, 0);
+}
+
+// ===================== Karte: Deckung, Requisiten, Distrikte, Aufbau =====================
+// Deckung (1.15 m hoch): Kollision + Modell. kind: 'sand' | 'hesco' | 'jersey'
+function cover(x, z, len, rot, kind) {
+  coll(x, z, rot ? 1.2 : len, 1.15, rot ? len : 1.2, 0);
+  if (kind === 'sand') propSandbags(x, z, len, rot, 0xc9b58a);
+  else if (kind === 'hesco') propHesco(x, z, len, rot, 0x8a7d5e);
+  else put('concrete', 0xc2bfb4, GEO.gable, x, 0, z, 1.1, 1.1, len, 0, rot ? 0 : Math.PI / 2, 0);
+}
+function crate(x, z, s) { coll(x, z, s, s, s, 0); propCrate(x, z, s); }
+function barrelAt(x, z, s, tint) { coll(x, z, 0.9 * s, 0.95 * s, 0.9 * s, 0); propBarrel(x, z, s, tint); }
 
 // Bereiche, in denen keine Zufallsgebaeude entstehen (Basen, Plaza)
 const RESERVED = [[-106, -54, -36, 36], [54, 106, -36, 36], [-18, 18, -18, 18]];
@@ -681,7 +1107,7 @@ const OBJ = [
   { x: 76, z: 0, c: 0xffa040 }, { x: 0, z: -28, c: 0x40e0d0 }, { x: 0, z: 28, c: 0xffffff },
 ];
 const mapRnd = mulberry32(2024);
-// Baublöcke zwischen den Strassen (Strassen: x = -40, 0, 40 und z = -42, 0, 42)
+// Baubloecke zwischen den Strassen (Strassen: x = -40, 0, 40 und z = -42, 0, 42)
 const BLOCKS = [];
 for (const xr of [[-54, -44], [-36, -4], [4, 36], [44, 54]]) {
   for (const zr of [[-66, -46], [-38, -4], [4, 38], [46, 66]]) BLOCKS.push([xr[0], xr[1], zr[0], zr[1]]);
@@ -708,78 +1134,96 @@ function tryHouse(bx0, bx1, bz0, bz1, tries) {
     if (!rectFree(x0, x1, z0, z1) || reservedHit(x0, x1, z0, z1)) continue;
     const doors = two ? ['n', 's', 'e'] : ['n', 's', 'e', 'w'];
     const door = doors[Math.floor(mapRnd() * doors.length)];
-    const wall = [C.brick, C.wall, 0x8f8a7e, 0x7a6e60][Math.floor(mapRnd() * 4)];
-    if (two) house2(x, z, w, d, door, { wall, roof: C.roofDark });
-    else house(x, z, w, d, 3.2, wall, C.roofDark, door, { partition: mapRnd() < 0.5 });
+    const tex = mapRnd() < 0.5 ? 'brick' : 'plaster';
+    const wall = [0xa8654a, 0xc9c1b0, 0xb3ada0, 0x9a8a7a][Math.floor(mapRnd() * 4)];
+    if (two) house2(x, z, w, d, door, { wall, roof: C.roofDark, tex });
+    else house(x, z, w, d, 3.2, wall, C.roofDark, door, { partition: mapRnd() < 0.5, tex, ac: mapRnd() < 0.4 });
     return true;
   }
   return false;
 }
-// Kisten, Container, Deckung und Fahrzeuge in einem Block
+// Kisten, Container, Deckung, Tonnen, Muelltonnen und Baenke in einem Block
 function fillBlock(bx0, bx1, bz0, bz1) {
-  const cols = [C.rust, C.olive, C.grey, C.grey2];
+  const cols = [0x9a5a34, 0x56633f, 0x5d6a74, 0x6f767c];
   for (let i = 0; i < 20; i++) {
     const x = lerp(bx0 + 2, bx1 - 2, mapRnd()), z = lerp(bz0 + 2, bz1 - 2, mapRnd());
     const r = mapRnd();
     if (r < 0.25 && rectFree(x - 3.2, x + 3.2, z - 3.2, z + 3.2) && !reservedHit(x - 3.2, x + 3.2, z - 3.2, z + 3.2)) {
       container(x, z, mapRnd() < 0.5 ? 0 : 1, cols[Math.floor(mapRnd() * cols.length)]);
-    } else if (r < 0.45 && freeSpot(x, z, 2.2) && !reservedHit(x - 3, x + 3, z - 1, z + 1)) {
-      cover(x, z, 5, mapRnd() < 0.5 ? 0 : 1, C.jersey);
-    } else if (r < 0.65 && freeSpot(x, z, 1.8)) {
+    } else if (r < 0.42 && freeSpot(x, z, 2.2) && !reservedHit(x - 3, x + 3, z - 1, z + 1)) {
+      cover(x, z, 5, mapRnd() < 0.5 ? 0 : 1, mapRnd() < 0.5 ? 'jersey' : 'hesco');
+    } else if (r < 0.56 && freeSpot(x, z, 1.8)) {
       crate(x, z, 1.1 + mapRnd() * 0.8);
+    } else if (r < 0.66 && freeSpot(x, z, 1.2)) {
+      barrelAt(x, z, 1, [0x3f6b4a, 0x7a3b2a, 0x2d4f7a][Math.floor(mapRnd() * 3)]);
+    } else if (r < 0.72 && freeSpot(x, z, 1.0)) {
+      propDumpster(x, z, mapRnd() < 0.5 ? 0 : 1);
+    } else if (r < 0.78 && freeSpot(x, z, 1.0)) {
+      propBench(x, z, mapRnd() < 0.5 ? 0 : 1);
+    } else if (r < 0.84 && freeSpot(x, z, 1.0)) {
+      propCone(x, z);
     }
   }
 }
-// Autos an den Strassen (als Deckung)
+// Fahrzeuge an den Strassen (als Deckung)
 function parkCars() {
-  const cols = [C.carRed, C.carWhite, C.carBlue, C.carGrey];
+  const cols = [0x9c2a22, 0xd9d9d2, 0x2e5088, 0x66707a];
   for (const x of [-40, 40]) for (let i = 0; i < 4; i++) {
     const z = lerp(-58, 58, mapRnd());
-    if (freeSpot(x, z, 2.4)) car(x, z, 1, cols[Math.floor(mapRnd() * cols.length)]);
+    if (!freeSpot(x, z, 2.4)) continue;
+    const r = mapRnd();
+    if (r < 0.15) vehBus(x, z, 1, 0xe0a72e);
+    else if (r < 0.3) vehTruck(x, z, 1, 0x6f7478);
+    else vehCar(x, z, 1, cols[Math.floor(mapRnd() * cols.length)]);
   }
   for (const z of [-42, 42]) for (let i = 0; i < 4; i++) {
     const x = lerp(-50, 50, mapRnd());
-    if (freeSpot(x, z, 2.4)) car(x, z, 0, cols[Math.floor(mapRnd() * cols.length)]);
+    if (!freeSpot(x, z, 2.4)) continue;
+    vehCar(x, z, 0, cols[Math.floor(mapRnd() * cols.length)]);
   }
 }
 
 // Basis einer Seite (side -1 = ALPHA im Westen, +1 = BRAVO im Osten)
 const PAL = {
-  alpha: { wall: 0x7b7f74, roof: 0x4b4f47, c1: 0x8a4a2a, c2: 0x4e5b3a, c3: 0x3e4c57, truck: 0x4e5b3a, team: ALPHA_COL },
-  bravo: { wall: 0x857a6c, roof: 0x5a4a3c, c1: 0x3e4c57, c2: 0x8a4a2a, c3: 0x4e5b3a, truck: 0x6a5a3a, team: BRAVO_COL },
+  alpha: { wall: 0x9a9c92, roof: 0x4b4f47, c1: 0x8a4a2a, c2: 0x4e5b3a, c3: 0x3e4c57, truck: 0x4e5b3a, team: ALPHA_COL },
+  bravo: { wall: 0xa8968a, roof: 0x5a4a3c, c1: 0x3e4c57, c2: 0x8a4a2a, c3: 0x4e5b3a, truck: 0x6a5a3a, team: BRAVO_COL },
 };
 function baseKit(side) {
   const s = side, p = side < 0 ? PAL.alpha : PAL.bravo;
-  house2(s * 88, -16, 12, 9, 's', { wall: p.wall, roof: p.roof });     // Kaserne
+  house2(s * 88, -16, 12, 9, 's', { wall: p.wall, roof: p.roof, tex: 'brick' });   // Kaserne
   container(s * 100, 6, 1, p.c1);
   container(s * 100, 12, 1, p.c2);
   container(s * 78, -26, 0, p.c3);
   container(s * 78, -26, 0, p.c3, 2.6);
   container(s * 94, 24, 0, p.c2);
-  truck(s * 80, 18, 0, p.truck);
-  cover(s * 70, -10, 8, 1, C.sand);
-  cover(s * 70, 10, 8, 1, C.sand);
-  cover(s * 72, -32, 8, 0, C.hesco);
-  cover(s * 72, 32, 8, 0, C.hesco);
-  flag(s * 84, -3, p.team);
-  for (let i = 0; i < 3; i++) solid(s * 84, 6 + i * 1.0, 0.9, 1.0, 0.9, C.barrel);
+  vehTruck(s * 80, 18, 0, p.truck);
+  cover(s * 70, -10, 8, 1, 'sand');
+  cover(s * 70, 10, 8, 1, 'sand');
+  cover(s * 72, -32, 8, 0, 'hesco');
+  cover(s * 72, 32, 8, 0, 'hesco');
+  propFlag(s * 84, -3, p.team);
+  for (let i = 0; i < 3; i++) barrelAt(s * 84, 6 + i * 1.0, 1, 0x3f6b4a);
 }
 
 function buildMap() {
-  // Begrenzung
-  solid(0, -MAP_Z, MAP_X * 2 + 2, 3, 1, C.wall);
-  solid(0, MAP_Z, MAP_X * 2 + 2, 3, 1, C.wall);
-  solid(-MAP_X, 0, 1, 3, MAP_Z * 2 + 2, C.wall);
-  solid(MAP_X, 0, 1, 3, MAP_Z * 2 + 2, C.wall);
+  // Begrenzung (Betonmauer)
+  solid(0, -MAP_Z, MAP_X * 2 + 2, 3, 1, 0xaaa69c, 0, 'concrete');
+  solid(0, MAP_Z, MAP_X * 2 + 2, 3, 1, 0xaaa69c, 0, 'concrete');
+  solid(-MAP_X, 0, 1, 3, MAP_Z * 2 + 2, 0xaaa69c, 0, 'concrete');
+  solid(MAP_X, 0, 1, 3, MAP_Z * 2 + 2, 0xaaa69c, 0, 'concrete');
 
-  // Strassen, Mittellinien und Plaza (nur Optik)
-  vis('box', C.asphalt, 0, 0.03, 0, 8, 0.06, CORE_Z * 2);
-  vis('box', C.asphalt, 0, 0.03, 0, CORE_X * 2, 0.06, 8);
-  for (const x of [-40, 40]) vis('box', C.asphalt, x, 0.03, 0, 8, 0.06, CORE_Z * 2);
-  for (const z of [-42, 42]) vis('box', C.asphalt, 0, 0.03, z, CORE_X * 2, 0.06, 8);
-  for (let z = -60; z <= 60; z += 8) if (Math.abs(z) > 6) vis('box', C.paint, 0, 0.09, z, 0.25, 0.02, 3);
-  for (let x = -100; x <= 100; x += 8) if (Math.abs(x) > 6) vis('box', C.paint, x, 0.09, 0, 3, 0.02, 0.25);
-  vis('box', C.concrete, 0, 0.05, 0, 34, 0.08, 34);
+  // Strassen, Markierungen und Plaza (flache Flaechen ohne Bodenabdunklung)
+  put('asphalt', 0xffffff, GEO.box, 0, 0.03, 0, 8, 0.06, CORE_Z * 2, 0, 0, 0, false);
+  put('asphalt', 0xffffff, GEO.box, 0, 0.03, 0, CORE_X * 2, 0.06, 8, 0, 0, 0, false);
+  for (const x of [-40, 40]) put('asphalt', 0xffffff, GEO.box, x, 0.03, 0, 8, 0.06, CORE_Z * 2, 0, 0, 0, false);
+  for (const z of [-42, 42]) put('asphalt', 0xffffff, GEO.box, 0, 0.03, z, CORE_X * 2, 0.06, 8, 0, 0, 0, false);
+  for (let z = -60; z <= 60; z += 8) if (Math.abs(z) > 6) put('paint', 0xe8e4d2, GEO.box, 0, 0.09, z, 0.25, 0.02, 3, 0, 0, 0, false);
+  for (let x = -100; x <= 100; x += 8) if (Math.abs(x) > 6) put('paint', 0xe8e4d2, GEO.box, x, 0.09, 0, 3, 0.02, 0.25, 0, 0, 0, false);
+  for (const sg of [-1, 1]) {                                   // Gehwege entlang der Mittelstrasse
+    put('concrete', 0xb4b0a6, GEO.box, sg * 4.3, 0.06, 0, 1.4, 0.12, CORE_Z * 2, 0, 0, 0, false);
+    put('concrete', 0xb4b0a6, GEO.box, 0, 0.06, sg * 4.3, CORE_X * 2, 0.12, 1.4, 0, 0, 0, false);
+  }
+  put('concrete', 0xb7b3a7, GEO.box, 0, 0.05, 0, 34, 0.08, 34, 0, 0, 0, false);
 
   // Basen
   baseKit(-1);
@@ -787,19 +1231,19 @@ function buildMap() {
 
   // Plaza: vier zweigeschossige Haeuser, Brunnen, Deckung
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    house2(sx * 26, sz * 26, 12, 10, sz > 0 ? 'n' : 's', { wall: C.brick, roof: C.roofDark });
+    house2(sx * 26, sz * 26, 12, 10, sz > 0 ? 'n' : 's', { wall: C.brick, roof: C.roofDark, tex: 'brick' });
   }
-  solid(0, 0, 4, 0.7, 4, C.concreteDark);
-  cover(-11, 0, 4, 1, C.sand);
-  cover(11, 0, 4, 1, C.sand);
-  cover(0, -11, 4, 0, C.sand);
-  cover(0, 11, 4, 0, C.sand);
+  propFountain(0, 0);
+  cover(-11, 0, 4, 1, 'sand');
+  cover(11, 0, 4, 1, 'sand');
+  cover(0, -11, 4, 0, 'sand');
+  cover(0, 11, 4, 0, 'sand');
 
   // Wachtuerme in den Ecken (Scharfschuetzen-Sicht)
   watchtower(-56, 52, 1);
   watchtower(56, -52, -1);
 
-  // Zufallsgebaeude und Kisten in den Bloecken
+  // Zufallsgebaeude und Requisiten in den Bloecken
   for (const [x0, x1, z0, z1] of BLOCKS) {
     let placed = 0;
     const want = 2 + Math.floor(mapRnd() * 3);
@@ -808,35 +1252,37 @@ function buildMap() {
   }
   parkCars();
 
-  // Objektiv-Flaggen
-  for (const o of OBJ) flag(o.x, o.z, o.c);
+  // Objektiv-Flaggen (ohne die Mitte, dort steht der Brunnen)
+  OBJ.forEach((o, i) => { if (i > 0) propFlag(o.x + 2.5, o.z, o.c); });
 
   // Laternen an den Strassen (nur wo frei)
   for (let x = -100; x <= 100; x += 14) {
-    if (freeSpot(x, -4.8, 0.6)) lamp(x, -4.8);
-    if (freeSpot(x, 4.8, 0.6)) lamp(x, 4.8);
+    if (freeSpot(x, -4.8, 0.6)) propLamp(x, -4.8);
+    if (freeSpot(x, 4.8, 0.6)) propLamp(x, 4.8);
   }
   for (let z = -60; z <= 60; z += 14) {
-    if (freeSpot(-4.8, z, 0.6)) lamp(-4.8, z);
-    if (freeSpot(4.8, z, 0.6)) lamp(4.8, z);
+    if (freeSpot(-4.8, z, 0.6)) propLamp(-4.8, z);
+    if (freeSpot(4.8, z, 0.6)) propLamp(4.8, z);
   }
 
   // Natur: Baeume und Felsen, im Stadtkern nur in den Parks, draussen auf den Huegeln
-  for (let i = 0; i < 520; i++) {
+  for (let i = 0; i < 300; i++) {
     const x = (mapRnd() * 2 - 1) * (MAP_X - 2), z = (mapRnd() * 2 - 1) * (MAP_Z - 2);
     const inCore = Math.abs(x) < CORE_X - 1 && Math.abs(z) < CORE_Z - 1;
     if (inCore && !inPark(x, z)) continue;
     if (!freeSpot(x, z, 1.6)) continue;
     const gy = groundAt(x, z);
-    if (mapRnd() < 0.72) tree(x, z, gy, 0.8 + mapRnd() * 0.6, mapRnd);
-    else rock(x, z, gy, 0.6 + mapRnd() * 0.8);
+    if (mapRnd() < 0.74) propTree(x, z, gy, 0.8 + mapRnd() * 0.6, mapRnd);
+    else if (mapRnd() < 0.5) propRock(x, z, gy, 0.6 + mapRnd() * 0.8, mapRnd);
+    else propBush(x, z, gy, 0.8 + mapRnd() * 0.5, mapRnd);
   }
   for (const [px, pz, r] of PARKS) {
     for (let i = 0; i < 8; i++) {
       const a = mapRnd() * Math.PI * 2, d = mapRnd() * (r - 1.5);
       const x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d;
-      if (freeSpot(x, z, 1.2)) tree(x, z, 0, 1.0 + mapRnd() * 0.4, mapRnd);
+      if (freeSpot(x, z, 1.2)) propTree(x, z, 0, 1.0 + mapRnd() * 0.4, mapRnd);
     }
+    if (freeSpot(px + 2, pz + 2, 1)) propBench(px + 2, pz + 2, 0);
   }
   flushVisuals();
 }

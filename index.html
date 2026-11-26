@@ -40,6 +40,23 @@
   #aim { width: 80px; height: 80px; font-size: 13px; }
   #gren, #drone, #crash { width: 66px; height: 66px; border-radius: 50%; font-size: 11px; }
   #crash { background: rgba(255,80,60,0.28); }
+  #stickR { display: none; width: 150px; height: 150px; border-style: dashed; background: rgba(255,255,255,0.05); }
+  body.edit #stickR { display: flex !important; }
+  #knobR { display: none; position: absolute; width: 66px; height: 66px; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; background: rgba(255,255,255,0.55); border: 2px solid rgba(255,255,255,0.85); }
+  .slbl { display: none; position: absolute; left: 0; right: 0; bottom: 12px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-align: center; opacity: .85; }
+  body.dr .slbl { display: block; }
+  body.dr #stickIdle, body.dr #stickR { display: flex !important; }
+  body.dr #knob, body.dr #knobR { display: block !important; }
+  body.dr #base { display: none !important; }
+  body.dr .ctl:not(.dkeep) { visibility: hidden; }
+  body.dr #crosshair { display: none; }
+  #killcam { position: fixed; left: 50%; top: 13%; transform: translateX(-50%); z-index: 7; text-align: center; pointer-events: none; white-space: nowrap; text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
+  #killcam .kcTag { display: inline-block; background: #d23b2e; border-radius: 6px; padding: 3px 10px; font-size: 13px; font-weight: 900; letter-spacing: .14em; }
+  #killcam .kcMain { font-size: 22px; font-weight: 900; margin-top: 8px; }
+  #killcam .kcSub { font-size: 14px; font-weight: 700; margin-top: 4px; opacity: .92; }
+  #killcam .kcRes { font-size: 13px; font-weight: 800; margin-top: 4px; opacity: .8; }
+  body.kc .ui, body.kc .ctl, body.kc #hud, body.kc #settingsBtn { visibility: hidden; }
+  #toast { position: fixed; left: 50%; top: 58px; transform: translateX(-50%); z-index: 8; padding: 7px 16px; border-radius: 999px; background: rgba(0,0,0,0.62); font-size: 14px; font-weight: 800; white-space: nowrap; pointer-events: none; display: none; }
   #extraLbl { font-size: 12px; margin-top: 2px; }
   #vhs { position: fixed; inset: 0; z-index: 2; pointer-events: none; display: none; overflow: hidden; }
   #vhs.on { display: block; }
@@ -145,9 +162,11 @@
 <body>
 <canvas id="game"></canvas>
 <div class="ui">
-  <div id="stickIdle" class="ctl round"></div>
+  <div id="stickIdle" class="ctl round dkeep"><span class="slbl">GAS · DREHEN</span></div>
+  <div id="stickR" class="ctl round dkeep"><span class="slbl">NICKEN · ROLLEN</span></div>
   <div id="base"></div>
   <div id="knob"></div>
+  <div id="knobR"></div>
   <div id="crosshair"></div>
 </div>
 <button id="settingsBtn" aria-label="Einstellungen">&#9881;</button>
@@ -159,14 +178,14 @@
   <div id="hpBar"><div id="hpFill"></div></div>
 </div>
 <div class="ctl round" id="jump">SPRUNG</div>
-<div class="ctl round" id="fire">FEUER</div>
+<div class="ctl round dkeep" id="fire">FEUER</div>
 <div class="ctl round" id="aim">ZIEL</div>
 <div class="ctl round" id="reload">NACHL.</div>
 <div class="ctl round" id="duck">DUCKEN</div>
 <div class="ctl round" id="prone">LIEGEN</div>
 <div class="ctl round" id="gren">GRANATE</div>
-<div class="ctl round" id="drone">DROHNE</div>
-<div class="ctl round" id="crash">CRASH</div>
+<div class="ctl round dkeep" id="drone">DROHNE</div>
+<div class="ctl round dkeep" id="crash">CRASH</div>
 <div class="ctl" id="hotbar">
   <div id="hbHead">–</div>
   <div id="hbSlots">
@@ -179,6 +198,8 @@
 <div id="scope"></div>
 <div id="vhs"><canvas id="vhsNoise" width="200" height="112"></canvas><div class="bar"></div><div class="rec" id="recTxt">● REC</div></div>
 <div id="deadMsg">ABGESCHOSSEN<small id="respawnTxt"></small></div>
+<div id="killcam" class="hidden"><div class="kcTag">KILLCAM</div><div class="kcMain" id="kcMain"></div><div class="kcSub" id="kcSub"></div><div class="kcRes" id="kcRes"></div></div>
+<div id="toast"></div>
 <div id="editbar" class="hidden"><span>Steuerung verschieben: Elemente ziehen</span><button id="editDone" class="primary">Fertig</button></div>
 
 <div id="lobby" class="overlay">
@@ -215,6 +236,7 @@
     </label>
     <label class="chk"><input type="checkbox" id="sFixed" /> Joystick fest (statt schwebend)</label>
     <label class="chk"><input type="checkbox" id="sInvert" /> Y-Achse umkehren</label>
+    <label class="chk"><input type="checkbox" id="sLevel" /> Drohne: Hilfen (Auto-Level und Höhenhalten)</label>
     <div class="row">
       <button id="sEdit" class="ghostbtn">Steuerung verschieben</button>
       <button id="sReset" class="ghostbtn">Standard</button>
@@ -272,8 +294,9 @@ const DEFAULT_LAYOUT = {
   gren:   { x: 0.52,  y: 0.88 },
   drone:  { x: 0.52,  y: 0.73 },
   crash:  { x: 0.52,  y: 0.60 },
+  droneR: { x: 0.87,  y: 0.70 },
 };
-const defaults = { sens: 2, size: 1, fixedStick: false, invertY: false, layout: {}, team: 'alpha', slots: ['m4', 'p17', null, null] };
+const defaults = { sens: 2, size: 1, fixedStick: false, invertY: false, droneLevel: true, layout: {}, team: 'alpha', slots: ['m4', 'p17', null, null] };
 let settings = { ...defaults };
 try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} }
@@ -1833,13 +1856,34 @@ function findPath(sx, sz, gx, gz) {
   return path;
 }
 
-// ===================== Drohne (FPV) mit VHS-Bild =====================
-// Die Drohne fliegt in 2.2 m Hoehe. Stick = fliegen, Blick = Kamera drehen, FEUER = langsamer Schuss,
-// CRASH = Sturzflug in die Blickrichtung, bei Einschlag 1 Treffer (toetet Gegner im Umkreis).
+// ===================== Drohne: FPV-Physik mit DJI-Steuerung =====================
+// Steuerung wie DJI-Modus 2: Linker Stick = Gas (hoch/runter) und Gieren (links/rechts),
+// rechter Stick = Nicken (vor/zurueck) und Rollen (links/rechts). Stick loslassen = Mitte.
+// Physik: Schub entlang der Hochachse der Drohne, Schwerkraft, Luftwiderstand, Drehraten mit
+// Verzoegerung. Die Lage ist ein Quaternion, Loopings und Ueberschlaege sind moeglich.
+const DRONE_G = 9.8;
+const DRONE_THRUST = 4 * DRONE_G;                         // voller Schub = 4 g, Schweben bei 25 % Gas
+const DRONE_DRAG = 0.035;                                 // quadratischer Luftwiderstand
+const DRONE_RATE = { roll: 2.8, pitch: 2.6, yaw: 2.2 };   // Drehrate bei vollem Ausschlag (rad/s), ca. 130-160 Grad/s
+const DRONE_CAM_TILT = 0.35;                              // FPV-Kamera 20 Grad nach oben geneigt
+const DRONE_R = 0.22;                                     // Kollisionsradius
+const DRONE_CEIL = 45;                                    // Hoechstflughoehe (m)
+const DRONE_CRASH_V = 6;                                  // harter Aufprall ab dieser Geschwindigkeit (m/s)
+const DRONE_DIVE_V = 26;                                  // Geschwindigkeit im Sturzflug (m/s)
+
 const DRONE = {
-  active: false, x: 0, y: 2.2, z: 0, yaw: 0, pitch: 0, vx: 0, vz: 0,
-  hp: 25, battery: 45, fireCd: 0, crashing: false, crashT: 0, cooldown: 0,
+  active: false, crashing: false, crashT: 0, cooldown: 0, battery: 45, hp: 25, fireCd: 0,
+  x: 0, y: 1.5, z: 0, vx: 0, vy: 0, vz: 0,
+  q: new THREE.Quaternion(),      // Lage: Koerper -> Welt
+  w: new THREE.Vector3(),         // Drehrate im Koerper (rad/s): x = Nicken, y = Gieren, z = Rollen
+  tAct: 0.25,                     // Motorleistung 0..1, folgt dem Gas mit Verzoegerung
+  camQ: new THREE.Quaternion(),   // Blickrichtung der FPV-Kamera
 };
+// Touch-Sticks, Werte -1..1: ly = Gas (oben +), lx = Gieren (rechts +), rx = Rollen (rechts +), ry = Nicken (vor +)
+const dIn = { lx: 0, ly: 0, rx: 0, ry: 0 };
+const _dUp = new THREE.Vector3(), _dFw = new THREE.Vector3(), _dAx = new THREE.Vector3();
+const _dQ = new THREE.Quaternion(), _dQi = new THREE.Quaternion();
+const _dTilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), DRONE_CAM_TILT);
 const vhsEl = $('vhs'), vhsCanvas = $('vhsNoise'), vhsCtx = vhsCanvas.getContext('2d');
 const recEl = $('recTxt');
 let vhsLast = 0;
@@ -1848,7 +1892,7 @@ function setVhs(on) {
   vhsEl.classList.toggle('on', on);
   canvas.style.filter = on ? 'saturate(0.55) contrast(1.18) brightness(0.92) hue-rotate(-10deg)' : '';
 }
-// Rauschen fuer das VHS-Bild (alle 70 ms neu)
+// Rauschen und OSD fuer das VHS-Bild (alle 70 ms neu)
 function drawVhs(now) {
   if (now - vhsLast < 70) return;
   vhsLast = now;
@@ -1860,85 +1904,195 @@ function drawVhs(now) {
     d[i + 3] = 255 * (0.25 + Math.random() * 0.5);
   }
   vhsCtx.putImageData(img, 0, 0);
-  recEl.textContent = `● REC  AKKU ${Math.max(0, Math.ceil(DRONE.battery))} s`;
+  const alt = Math.max(0, DRONE.y - groundAt(DRONE.x, DRONE.z)).toFixed(0);
+  const spd = Math.hypot(DRONE.vx, DRONE.vy, DRONE.vz).toFixed(0);
+  recEl.textContent = `● REC · AKKU ${Math.max(0, Math.ceil(DRONE.battery))} s · H ${alt} m · ${spd} m/s · GAS ${Math.round(DRONE.tAct * 100)} %`;
+}
+
+// Stick-Kurve: Totzone, und fein in der Mitte
+function stickCurve(v) {
+  const a = Math.abs(v);
+  if (a < 0.06) return 0;
+  const x = (a - 0.06) / 0.94;
+  return Math.sign(v) * (0.6 * x + 0.4 * x * x * x);
+}
+// Touch und Tastatur zusammen (WASD = Nicken/Rollen, Q/E = Gieren, Leertaste/Shift = Gas)
+function droneInput() {
+  const k = c => (keys.has(c) ? 1 : 0);
+  return {
+    lx: stickCurve(clamp(dIn.lx + k('KeyE') - k('KeyQ'), -1, 1)),
+    ly: stickCurve(clamp(dIn.ly + k('Space') - k('ShiftLeft') - k('ShiftRight'), -1, 1)),
+    rx: stickCurve(clamp(dIn.rx + k('KeyD') + k('ArrowRight') - k('KeyA') - k('ArrowLeft'), -1, 1)),
+    ry: stickCurve(clamp(dIn.ry + k('KeyW') + k('ArrowUp') - k('KeyS') - k('ArrowDown'), -1, 1)),
+  };
 }
 
 function droneLaunch() {
   if (DRONE.active || DRONE.cooldown > 0 || player.dead) return;
   const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
-  DRONE.x = player.x - sy * 1.6;               // 1.6 m vor dem Spieler starten
-  DRONE.z = player.z - cy * 1.6;
-  if (!freeSpot(DRONE.x, DRONE.z, 0.35)) { DRONE.x = player.x; DRONE.z = player.z; }   // nicht in einer Wand starten
-  DRONE.y = groundAt(DRONE.x, DRONE.z) + 2.2;
-  DRONE.yaw = player.yaw;
-  DRONE.pitch = 0;
-  DRONE.hp = 25;
-  DRONE.battery = 45;
-  DRONE.crashing = false;
-  DRONE.crashT = 0;
-  DRONE.fireCd = 0;
-  DRONE.active = true;
+  let x = player.x - sy * 1.6, z = player.z - cy * 1.6;      // 1.6 m vor dem Spieler starten
+  if (!freeSpot(x, z, 0.35)) { x = player.x; z = player.z; }  // nicht in einer Wand starten
+  let y = groundAt(x, z) + 1.5;
+  while (y < DRONE_CEIL && insideSolid(x, y, z)) y += 0.5;
+  Object.assign(DRONE, {
+    x, y, z, vx: 0, vy: 0, vz: 0, battery: 45, hp: 25, crashing: false, crashT: 0, fireCd: 0,
+    tAct: 0.25, active: true,                                  // Schweben bei 25 % Gas
+  });
+  DRONE.q.setFromEuler(new THREE.Euler(0, player.yaw, 0, 'YXZ'));
+  DRONE.w.set(0, 0, 0);
   aimOn = false;
   setVhs(true);
+  showToast('Drohne startet · links: Gas und Drehen · rechts: Nicken und Rollen');
 }
-function droneEnd() {
-  DRONE.active = false;
-  DRONE.crashing = false;
-  DRONE.cooldown = 8;
+function droneEnd(msg = null) {
+  if (!DRONE.active) return;
+  DRONE.active = false; DRONE.crashing = false; DRONE.cooldown = 8;
   setVhs(false);
+  if (msg) showToast(msg);
 }
+// Sturzflug in die Richtung der Nase: bei Einschlag 1 Treffer im Umkreis
 function droneCrash() {
   if (!DRONE.active || DRONE.crashing) return;
   DRONE.crashing = true;
   DRONE.crashT = 4;
+  showToast('STURZFLUG · mit rechtem Stick lenken');
 }
-// Bewegung und Kollision (Drohne = Punkt mit Radius 0.3)
-function updateDrone(dt, mx, mz) {
+function droneBoom() {
+  blast(DRONE.x, DRONE.y, DRONE.z, 3.4, 999, 20, 'crash');
+  droneEnd();
+}
+
+// Flugphysik und Kollision (Drohne = Kugel mit Radius 0.22)
+function updateDrone(dt) {
   if (!DRONE.active) return;
-  DRONE.battery -= dt;
+  const inp = droneInput();
+  const q = DRONE.q;
+
+  // Akku: mehr Gas = schnellerer Verbrauch
+  DRONE.battery -= dt * (0.7 + DRONE.tAct * 1.2);
+  if (DRONE.battery <= 0) { DRONE.battery = 0; droneEnd('Akku leer'); return; }
   DRONE.fireCd -= dt;
-  if (DRONE.battery <= 0) { droneEnd(); return; }
+
+  // Drehraten-Befehl in Koerperachsen: x Nicken, y Gieren, z Rollen (vorwaerts = -z)
+  const sc = clamp(settings.sens / 2, 0.5, 1.5);
+  const pitchIn = settings.invertY ? -inp.ry : inp.ry;
+  let cx = -pitchIn * DRONE_RATE.pitch * sc;                  // Stick vor = Nase runter
+  let cy = -inp.lx * DRONE_RATE.yaw * sc;                     // Stick rechts = nach rechts drehen
+  let cz = -inp.rx * DRONE_RATE.roll * sc;                    // Stick rechts = rechte Seite runter
+  if (settings.droneLevel && inp.rx === 0 && inp.ry === 0) {  // Auto-Level: ohne Stick waagerecht werden
+    _dUp.set(0, 1, 0).applyQuaternion(q);                     // Hochachse der Drohne in der Welt
+    let ax = -_dUp.z, az = _dUp.x, amt;
+    const len = Math.hypot(ax, az);
+    const lvl = _dUp.y < 0.5 ? 3.5 : 2.2;                     // steil oder kopfueber: schneller zurueck
+    if (len > 1e-3) {
+      ax /= len; az /= len;
+      amt = Math.min(1, len * 3);
+      if (_dUp.y < 0.5) amt = Math.max(amt, 0.6);
+    } else if (_dUp.y < 0) { ax = 1; az = 0; amt = 1; }       // genau auf dem Kopf: ueber die Seite drehen
+    else amt = 0;
+    _dAx.set(ax * amt * lvl, 0, az * amt * lvl).applyQuaternion(_dQi.copy(q).invert());
+    cx += _dAx.x; cz += _dAx.z;
+  }
+
+  // Drehraten folgen dem Befehl verzoegert (Motor und Regler) und drehen die Lage
+  const kr = 1 - Math.exp(-dt * 16);
+  DRONE.w.x += (cx - DRONE.w.x) * kr;
+  DRONE.w.y += (cy - DRONE.w.y) * kr;
+  DRONE.w.z += (cz - DRONE.w.z) * kr;
+  const wl = DRONE.w.length();
+  if (wl > 1e-6) {
+    _dAx.copy(DRONE.w).multiplyScalar(1 / wl);
+    _dQ.setFromAxisAngle(_dAx, wl * dt);
+    q.multiply(_dQ).normalize();
+  }
+
+  // Gas: Stick in der Mitte = Schweben, oben = steigen, unten = sinken
+  _dUp.set(0, 1, 0).applyQuaternion(q);                       // Hochachse nach dem Drehen
+  let gasCmd = 0.25 + inp.ly * 0.21;
+  if (settings.droneLevel && Math.abs(inp.ly) < 0.02) {       // Hilfe: Hoehe halten, in der Rueckenlage Motor zurueck
+    gasCmd = _dUp.y < -0.3 ? 0.04 : 0.25 + clamp(-DRONE.vy * 0.03, -0.12, 0.12);
+  }
+  DRONE.tAct += (gasCmd - DRONE.tAct) * (1 - Math.exp(-dt * 12));
+  const thrust = DRONE_THRUST * DRONE.tAct;
   if (DRONE.crashing) {
     DRONE.crashT -= dt;
-    DRONE.vx = -Math.sin(DRONE.yaw) * 26;
-    DRONE.vz = -Math.cos(DRONE.yaw) * 26;
-    if (DRONE.crashT <= 0) { blast(DRONE.x, DRONE.y, DRONE.z, 3.4, 999, 20, 'crash'); droneEnd(); return; }
+    if (DRONE.crashT <= 0) { droneBoom(); return; }
+    _dFw.set(0, 0, -1).applyQuaternion(q).multiplyScalar(DRONE_DIVE_V);   // Sturzflug in Richtung der Nase
+    DRONE.vx = _dFw.x; DRONE.vy = _dFw.y; DRONE.vz = _dFw.z;
   } else {
-    const sp = 9;
-    DRONE.vx = (-Math.sin(DRONE.yaw) * mz + Math.cos(DRONE.yaw) * mx) * sp;
-    DRONE.vz = (-Math.cos(DRONE.yaw) * mz - Math.sin(DRONE.yaw) * mx) * sp;
+    const k = DRONE_DRAG * Math.hypot(DRONE.vx, DRONE.vy, DRONE.vz);
+    DRONE.vx += (_dUp.x * thrust - k * DRONE.vx) * dt;
+    DRONE.vy += (_dUp.y * thrust - DRONE_G - k * DRONE.vy) * dt;
+    DRONE.vz += (_dUp.z * thrust - k * DRONE.vz) * dt;
   }
-  const nx = DRONE.x + DRONE.vx * dt, nz = DRONE.z + DRONE.vz * dt;
-  const hy = DRONE.y;
-  let blocked = false;
+  DRONE.x += DRONE.vx * dt; DRONE.y += DRONE.vy * dt; DRONE.z += DRONE.vz * dt;
+
+  // Kollisionen mit Bloecken, Boden, Kartenrand und Decke
+  let impact = 0;
   for (const b of solids) {
-    if (b.minY > hy + 0.4 || b.maxY < hy - 0.4) continue;
-    if (circleTouches(nx, nz, 0.3, b)) { blocked = true; break; }
-  }
-  if (blocked) {
-    if (DRONE.crashing) { blast(nx, hy, nz, 3.4, 999, 20, 'crash'); droneEnd(); return; }
-    DRONE.vx = 0; DRONE.vz = 0;
-  } else {
-    DRONE.x = nx; DRONE.z = nz;
-  }
-  DRONE.y = groundAt(DRONE.x, DRONE.z) + 2.2;
-  if (DRONE.crashing) {
-    for (const b of bots) {
-      if (b.alive && Math.hypot(b.x - DRONE.x, b.z - DRONE.z) < 1.2) {
-        blast(DRONE.x, DRONE.y, DRONE.z, 3.4, 999, 20, 'crash');
-        droneEnd();
-        return;
-      }
+    if (DRONE.y < b.minY - DRONE_R || DRONE.y > b.maxY + DRONE_R) continue;
+    if (DRONE.x < b.minX - DRONE_R || DRONE.x > b.maxX + DRONE_R) continue;
+    if (DRONE.z < b.minZ - DRONE_R || DRONE.z > b.maxZ + DRONE_R) continue;
+    const px = clamp(DRONE.x, b.minX, b.maxX), py = clamp(DRONE.y, b.minY, b.maxY), pz = clamp(DRONE.z, b.minZ, b.maxZ);
+    let nx = DRONE.x - px, ny = DRONE.y - py, nz = DRONE.z - pz;
+    const d2 = nx * nx + ny * ny + nz * nz;
+    let pen;
+    if (d2 > 1e-9) {
+      const d = Math.sqrt(d2);
+      if (d >= DRONE_R) continue;
+      nx /= d; ny /= d; nz /= d; pen = DRONE_R - d;
+    } else {                                                  // Mittelpunkt im Block: an der naechsten Seite heraus
+      const dist = [DRONE.x - b.minX, b.maxX - DRONE.x, DRONE.y - b.minY, b.maxY - DRONE.y, DRONE.z - b.minZ, b.maxZ - DRONE.z];
+      let m = 0;
+      for (let i = 1; i < 6; i++) if (dist[i] < dist[m]) m = i;
+      nx = ny = nz = 0;
+      if (m === 0) nx = -1; else if (m === 1) nx = 1; else if (m === 2) ny = -1; else if (m === 3) ny = 1; else if (m === 4) nz = -1; else nz = 1;
+      pen = dist[m] + DRONE_R;
+    }
+    DRONE.x += nx * pen; DRONE.y += ny * pen; DRONE.z += nz * pen;
+    const vn = DRONE.vx * nx + DRONE.vy * ny + DRONE.vz * nz;
+    if (vn < 0) {
+      impact = Math.max(impact, -vn);
+      DRONE.vx = (DRONE.vx - 1.25 * vn * nx) * 0.85;          // leichter Rueckprall und Reibung
+      DRONE.vy = (DRONE.vy - 1.25 * vn * ny) * 0.85;
+      DRONE.vz = (DRONE.vz - 1.25 * vn * nz) * 0.85;
     }
   }
-  DRONE.pitch = clamp(DRONE.pitch, -1.2, 1.2);
+  // Boden: sanft landen oder hart aufschlagen
+  const gy = groundAt(DRONE.x, DRONE.z) + DRONE_R;
+  if (DRONE.y < gy) {
+    if (DRONE.vy < 0) { impact = Math.max(impact, -DRONE.vy); DRONE.vy = -DRONE.vy * 0.25; }
+    DRONE.y = gy;
+    DRONE.vx *= 0.7; DRONE.vz *= 0.7;
+  }
+  // Kartenrand und Hoechstflughoehe
+  const bx = MAP_X - 2, bz = MAP_Z - 2;
+  if (DRONE.x < -bx) { if (DRONE.vx < 0) impact = Math.max(impact, -DRONE.vx); DRONE.x = -bx; DRONE.vx = Math.abs(DRONE.vx) * 0.3; }
+  if (DRONE.x > bx) { if (DRONE.vx > 0) impact = Math.max(impact, DRONE.vx); DRONE.x = bx; DRONE.vx = -Math.abs(DRONE.vx) * 0.3; }
+  if (DRONE.z < -bz) { if (DRONE.vz < 0) impact = Math.max(impact, -DRONE.vz); DRONE.z = -bz; DRONE.vz = Math.abs(DRONE.vz) * 0.3; }
+  if (DRONE.z > bz) { if (DRONE.vz > 0) impact = Math.max(impact, DRONE.vz); DRONE.z = bz; DRONE.vz = -Math.abs(DRONE.vz) * 0.3; }
+  if (DRONE.y > DRONE_CEIL) { DRONE.y = DRONE_CEIL; if (DRONE.vy > 0) DRONE.vy = 0; }
+
+  if (impact > DRONE_CRASH_V) {
+    if (DRONE.crashing) { droneBoom(); return; }
+    dustAt(new THREE.Vector3(DRONE.x, Math.max(0.1, DRONE.y - 0.3), DRONE.z));
+    droneEnd('Drohne abgestürzt');
+    return;
+  }
+  if (DRONE.crashing) {                                       // Sturzflug: Einschlag bei Bots in der Naehe
+    for (const b of bots) {
+      if (b.alive && Math.hypot(b.x - DRONE.x, b.z - DRONE.z) < 1.2 && DRONE.y - groundAt(b.x, b.z) < 2.2) { droneBoom(); return; }
+    }
+  }
+  DRONE.camQ.copy(q).multiply(_dTilt);                        // FPV-Kamera: Lage plus Neigung
 }
-// Langsamer Schuss der Drohne: 2 Schuss pro Sekunde, wenig Schaden
+
+// Schuss der Drohne in die Blickrichtung: 2 Schuss pro Sekunde, wenig Schaden
 function droneFire() {
-  if (DRONE.fireCd > 0 || !DRONE.active) return;
+  if (DRONE.fireCd > 0 || !DRONE.active || DRONE.crashing) return;
   DRONE.fireCd = 0.45;
-  const cp = Math.cos(DRONE.pitch);
-  const dx = -Math.sin(DRONE.yaw) * cp, dy = Math.sin(DRONE.pitch), dz = -Math.cos(DRONE.yaw) * cp;
+  const d = _dFw.set(0, 0, -1).applyQuaternion(DRONE.camQ);
+  const dx = d.x, dy = d.y, dz = d.z;
   const ox = DRONE.x, oy = DRONE.y, oz = DRONE.z;
   const hw = rayWorld(ox, oy, oz, dx, dy, dz);
   const tWorld = Math.min(hw.t, rayTerrain(ox, oy, oz, dx, dy, dz, Number.isFinite(hw.t) ? hw.t : 200));
@@ -1953,7 +2107,7 @@ function droneFire() {
 function damageDrone(d) {
   if (!DRONE.active) return;
   DRONE.hp -= d;
-  if (DRONE.hp <= 0) { blast(DRONE.x, DRONE.y, DRONE.z, 2.2, 40, 10, 'drone'); droneEnd(); }
+  if (DRONE.hp <= 0) { blast(DRONE.x, DRONE.y, DRONE.z, 2.2, 40, 10, 'drone'); droneEnd('Drohne abgeschossen'); }
 }
 
 // ===================== Granaten (Spieler und Bots) =====================
@@ -1995,7 +2149,7 @@ function throwBotGrenade(b, tx, tz) {
   const ty = groundAt(tx, tz) + 0.05;
   const vx = (tx - ox) / T, vz = (tz - oz) / T;
   const vy = (ty - oy + 0.5 * GREN_G * T * T) / T;
-  spawnGrenade(ox, oy, oz, vx, vy, vz, 'bot', tx, tz);
+  spawnGrenade(ox, oy, oz, vx, vy, vz, b, tx, tz);       // Wurf-Bot merkt sich der Killcam wegen
   addIndicator({ x: b.x, z: b.z }, 'gren');     // Pfeil zur Quelle
 }
 // Explosion: Schaden an gegnerischen Bots und am Spieler im Radius (mit Abfall nach aussen)
@@ -2009,7 +2163,7 @@ function blast(x, y, z, radius, botDmg, playerDmg, owner) {
   }
   if (playerDmg > 0 && !player.dead) {
     const d = Math.hypot(player.x - x, (player.y + 0.9) - y, player.z - z);
-    if (d < radius) damagePlayer(playerDmg * (1 - d / radius));
+    if (d < radius) damagePlayer(playerDmg * (1 - d / radius), typeof owner === 'object' && owner ? { bot: owner, kind: 'gren' } : null);
   }
   const m = new THREE.Mesh(sphGeo(1), boomMat);
   m.position.set(x, y, z);
@@ -2044,6 +2198,81 @@ function resetGrenades() {
   for (const g of grenades) { scene.remove(g.m); if (g.ring) scene.remove(g.ring); }
   grenades.length = 0;
   grenadesLeft = 3;
+}
+
+// ===================== Killcam: Wiederholung aus Sicht des Schuetzen =====================
+// Der Verlauf wird laufend gespeichert. Nach dem Tod zeigt die Killcam die letzten Sekunden
+// aus den Augen des Schuetzen; der Spieler liegt dort, wo er getroffen wurde.
+const KC_REPLAY = 2.4;                    // Sekunden vor dem Tod, die gezeigt werden
+const KC_KEEP = 4.5;                      // so lange wird der Verlauf gespeichert
+const HIST = [];                          // { t, p: [x, y, z, yaw, Haltung], b: [[x, z, yaw, lebt], ...] }
+const kc = { active: false, tDeath: 0, bi: -1 };
+const kcEl = $('killcam'), kcMain = $('kcMain'), kcSub = $('kcSub'), kcRes = $('kcRes');
+
+function recordHist() {
+  HIST.push({
+    t: gameTime,
+    p: [player.x, player.y, player.z, player.yaw, player.pose],
+    b: bots.map(b => [b.x, b.z, b.yaw, b.alive ? 1 : 0]),
+  });
+  while (HIST.length > 1 && gameTime - HIST[0].t > KC_KEEP) HIST.shift();
+}
+// Verlauf zur Zeit tau, zwischen zwei Aufnahmen gemischt
+function histAt(tau) {
+  let i = HIST.length - 1;
+  while (i > 0 && HIST[i].t > tau) i--;
+  const a = HIST[i], n = HIST[Math.min(i + 1, HIST.length - 1)];
+  const span = n.t - a.t;
+  const f = span > 1e-6 ? clamp((tau - a.t) / span, 0, 1) : 0;
+  const L = (x, y) => x + (y - x) * f;
+  const A = (x, y) => x + Math.atan2(Math.sin(y - x), Math.cos(y - x)) * f;
+  const pa = a.p, pn = n.p;
+  return {
+    p: [L(pa[0], pn[0]), L(pa[1], pn[1]), L(pa[2], pn[2]), A(pa[3], pn[3]), pa[4]],
+    b: a.b.map((ba, k) => { const bn = n.b[k]; return [L(ba[0], bn[0]), L(ba[1], bn[1]), A(ba[2], bn[2]), ba[3]]; }),
+  };
+}
+
+function startKillcam(bot, kind) {
+  const bi = bots.indexOf(bot);
+  if (bi < 0 || HIST.length < 2) return;
+  kc.active = true; kc.tDeath = gameTime; kc.bi = bi;
+  const wname = kind === 'gren' ? 'Granate' : (bot.weapon && WEAPONS[bot.weapon] ? WEAPONS[bot.weapon].name : 'Waffe');
+  const dist = Math.round(Math.hypot(bot.x - player.x, bot.z - player.z));
+  kcMain.textContent = `Getötet von ${bot.name}`;
+  kcSub.textContent = `${bot.team === 'alpha' ? 'Team ALPHA' : 'Team BRAVO'} · ${wname} · ${dist} m`;
+  kcEl.classList.remove('hidden');
+  document.body.classList.add('kc');
+  canvas.style.filter = 'saturate(0.7) contrast(1.08) brightness(0.9)';
+}
+function endKillcam() {
+  kc.active = false;
+  kcEl.classList.add('hidden');
+  document.body.classList.remove('kc');
+  canvas.style.filter = '';
+}
+// Wiedergabe: 2.4 s vor dem Tod, danach steht das Bild still bis zum Respawn
+function updateKillcam() {
+  const elapsed = gameTime - kc.tDeath;
+  const tau = Math.max(HIST[0].t, kc.tDeath - KC_REPLAY + Math.min(elapsed, KC_REPLAY));
+  const s = histAt(tau);
+  // Spieler dort zeigen, wo er getroffen wurde
+  const lie = clamp(s.p[4] - 1, 0, 1);
+  playerRig.root.visible = true;
+  playerRig.root.position.set(s.p[0], s.p[1] + 0.12 * lie, s.p[2]);
+  playerRig.root.rotation.set(-(Math.PI / 2) * lie, s.p[3], 0);
+  // Bots an ihren aufgezeichneten Plaetzen
+  bots.forEach((b, k) => {
+    const q = s.b[k];
+    b.rig.root.position.set(q[0], groundAt(q[0], q[1]) + (q[3] ? 0 : 0.12), q[1]);
+    b.rig.root.rotation.set(0, q[2], q[3] ? 0 : (Math.PI / 2) * 0.95);
+  });
+  // Kamera: Augen des Schuetzen, Blick auf den Spieler
+  const k = s.b[kc.bi];
+  if (Math.abs(camera.fov - 70) > 0.01) { camera.fov = 70; camera.updateProjectionMatrix(); }
+  camera.position.set(k[0], groundAt(k[0], k[1]) + 1.5 + Math.sin(gameTime * 2.3) * 0.015, k[1]);
+  camera.lookAt(s.p[0], s.p[1] + lerpPose(POSE_PIVOT, s.p[4]), s.p[2]);
+  viewModel.visible = false;
 }
 
 // ===================== Physik des Spielers =====================
@@ -2110,6 +2339,7 @@ function showIndicator(b) {
 // ===================== Bots (Gegner und Teamkameraden) =====================
 let bots = [];
 const BOT_POSE = 1.6;
+const BOT_NAMES = ['Wolf', 'Falke', 'Luchs', 'Dachs', 'Rabe', 'Otter', 'Fuchs', 'Bär'];
 function pickSpot(zone, avoid = null, tries = 40) {
   for (let i = 0; i < tries; i++) {
     const x = lerp(zone[0], zone[1], Math.random()), z = lerp(zone[2], zone[3], Math.random());
@@ -2136,7 +2366,8 @@ function makeBot(botTeam, enemy) {
   showRigWeapon(rig, wid);
   const spawn = pickSpot(ZONE[botTeam], SPAWN[botTeam]);
   const b = {
-    rig, team: botTeam, enemy, weapon: wid, x: spawn.x, z: spawn.z, y: 0, yaw: 0,
+    rig, team: botTeam, enemy, weapon: wid, name: BOT_NAMES[bots.length % BOT_NAMES.length],
+    x: spawn.x, z: spawn.z, y: 0, yaw: 0,
     hp: 100, alive: true, respawn: 0,
     obj: 0, objT: 0, path: [], pIdx: 0, repathT: 0, goalX: NaN, goalZ: NaN,
     seen: false, lastX: spawn.x, lastZ: spawn.z, lastT: -99, reactT: 0,
@@ -2195,7 +2426,7 @@ function botShoot(b, dist) {
   const moveMul = Math.hypot(player.moveX, player.moveZ) > 0.2 ? 0.7 : 1;
   const stance = player.pose < 0.5 ? 1 : (player.pose < 1.5 ? 0.75 : 0.5);
   const chance = clamp(0.36 - dist * 0.006, 0.06, 0.36) * moveMul * stance;
-  if (Math.random() < chance) damagePlayer(10);
+  if (Math.random() < chance) damagePlayer(10, { bot: b, kind: 'shot' });
 }
 // Feuerstoss: 3 Schuss, dann kurze Pause
 function botFireTick(b, pd) {
@@ -2323,7 +2554,8 @@ function updateBots(dt) {
 }
 
 // ===================== Schaden, Tod, Respawn =====================
-function damagePlayer(d) {
+// src = { bot, kind } fuer die Killcam, sonst null
+function damagePlayer(d, src = null) {
   if (player.dead) return;
   player.hp -= d;
   hurtT = 0.45;
@@ -2333,9 +2565,11 @@ function damagePlayer(d) {
     player.deadT = 3;
     deaths++;
     if (DRONE.active) droneEnd();
+    if (src && src.bot) startKillcam(src.bot, src.kind);
   }
 }
 function respawnPlayer() {
+  endKillcam();
   const s = SPAWN[team];
   player.x = s.x; player.z = s.z; player.y = groundAt(s.x, s.z);
   player.vy = 0; player.grounded = true;
@@ -2359,6 +2593,7 @@ function resetMatch() {
   kills = 0; deaths = 0;
   dmgList.length = 0;
   DRONE.active = false; DRONE.cooldown = 0; setVhs(false);
+  endKillcam(); HIST.length = 0;
   resetGrenades();
   respawnPlayer();
   currentSlot = Math.max(0, hotbar.findIndex(Boolean));
@@ -2369,9 +2604,12 @@ function resetMatch() {
 const CTL = {
   stick: $('stickIdle'), jump: $('jump'), fire: $('fire'), aim: $('aim'), reload: $('reload'),
   duck: $('duck'), prone: $('prone'), gren: $('gren'), drone: $('drone'), crash: $('crash'),
-  hotbar: $('hotbar'), view: $('view'),
+  hotbar: $('hotbar'), view: $('view'), droneR: $('stickR'),
 };
-const baseEl = $('base'), knobEl = $('knob'), idleEl = $('stickIdle');
+const baseEl = $('base'), knobEl = $('knob'), idleEl = $('stickIdle'), knobR = $('knobR');
+const toastEl = $('toast');
+let toastT = 0;
+function showToast(msg, secs = 2.2) { toastEl.textContent = msg; toastEl.style.display = 'block'; toastT = secs; }
 const hbHead = $('hbHead');
 const hbSlotEls = [...document.querySelectorAll('.hs')];
 const hudTeam = $('team'), hudScore = $('score'), hudHp = $('hpFill'), hudStance = $('stanceLbl'), hudExtra = $('extraLbl');
@@ -2397,6 +2635,7 @@ function applyLayout() {
     el.style.top = (p.y * Hh) + 'px';
   }
   document.documentElement.style.setProperty('--s', settings.size);
+  placeDroneKnobs();
 }
 function toggleView() {
   thirdPerson = !thirdPerson;
@@ -2433,7 +2672,10 @@ function updateHUD() {
   crossEl.classList.toggle('hit', hitT > 0);
   hurtEl.style.opacity = clamp(hurtT / 0.45, 0, 1) * 0.9;
   scopeEl.style.display = (zoomAmt > 0.8 && id && WEAPONS[id].optic === 'scope' && !effTP() && !DRONE.active) ? 'block' : 'none';
-  deadEl.style.display = player.dead ? 'block' : 'none';
+  document.body.classList.toggle('dr', DRONE.active);
+  document.body.classList.toggle('kc', kc.active);
+  if (kc.active) setText(kcRes, `Respawn in ${Math.ceil(player.deadT)} s`);
+  deadEl.style.display = player.dead && !kc.active ? 'block' : 'none';
   if (player.dead) setText(respawnTxt, `Respawn in ${Math.ceil(player.deadT)} s`);
   CTL.aim.classList.toggle('on', aimOn);
   CTL.duck.classList.toggle('on', player.poseTarget === 1);
@@ -2492,13 +2734,15 @@ function clampCamera(from, to) {       // Kamera nicht durch Waende schieben
   return to;
 }
 function updateCamera() {
+  if (kc.active) { updateKillcam(); return; }
   const id = curId();
   if (DRONE.active) {                  // Drohnen-Kamera
     playerRig.root.visible = false;
     viewModel.visible = false;
     if (Math.abs(camera.fov - 80) > 0.01) { camera.fov = 80; camera.updateProjectionMatrix(); }
-    camera.position.set(DRONE.x, DRONE.y, DRONE.z);
-    camera.rotation.set(DRONE.pitch, DRONE.yaw, 0);
+    const shake = Math.sin(gameTime * 95) * 0.0015 * DRONE.tAct;     // Propellerzittern
+    camera.position.set(DRONE.x + shake, DRONE.y + shake * 0.5, DRONE.z);
+    camera.quaternion.copy(DRONE.camQ);
     return;
   }
   const tp = effTP();
@@ -2671,6 +2915,7 @@ function openSettings() {
   $('sSize').value = Math.round(settings.size * 100);
   $('sFixed').checked = settings.fixedStick;
   $('sInvert').checked = settings.invertY;
+  $('sLevel').checked = settings.droneLevel;
   updateSettingLabels();
   settingsEl.classList.remove('hidden');
 }
@@ -2687,10 +2932,11 @@ $('sSens').addEventListener('input', e => { settings.sens = e.target.value / 100
 $('sSize').addEventListener('input', e => { settings.size = e.target.value / 100; updateSettingLabels(); applyLayout(); });
 $('sFixed').addEventListener('change', e => { settings.fixedStick = e.target.checked; applyLayout(); });
 $('sInvert').addEventListener('change', e => { settings.invertY = e.target.checked; });
+$('sLevel').addEventListener('change', e => { settings.droneLevel = e.target.checked; });
 $('sClose').addEventListener('click', closeSettings);
 $('sLobby').addEventListener('click', () => { closeSettings(); setScreen('lobby'); renderLobby(); });
 $('sReset').addEventListener('click', () => {
-  settings.sens = 2; settings.size = 1; settings.fixedStick = false; settings.invertY = false; settings.layout = {};
+  settings.sens = 2; settings.size = 1; settings.fixedStick = false; settings.invertY = false; settings.droneLevel = true; settings.layout = {};
   openSettings(); applyLayout(); saveSettings();
 });
 $('sEdit').addEventListener('click', () => enterEdit());
@@ -2701,12 +2947,14 @@ function enterEdit() {
   screen = 'game';
   lobbyEl.classList.add('hidden');
   editMode = true;
+  document.body.classList.add('edit');
   $('editbar').classList.remove('hidden');
   for (const k in CTL) CTL[k].classList.add('editing');
   applyWeaponVisibility();
 }
 function exitEdit() {
   editMode = false;
+  document.body.classList.remove('edit');
   $('editbar').classList.add('hidden');
   for (const k in CTL) CTL[k].classList.remove('editing');
   saveSettings();
@@ -2716,7 +2964,7 @@ $('editDone').addEventListener('click', exitEdit);
 
 // ===================== Eingabe: Touch (Mehrfingerbedienung), Maus, Tastatur =====================
 const CTL_HIT = ['jump', 'fire', 'aim', 'reload', 'duck', 'prone', 'gren', 'drone', 'crash', 'hotbar', 'view'];
-const DRONE_KEYS = ['fire', 'drone', 'crash', 'view', 'hotbar'];     // in der Drohne aktiv
+const DRONE_BTNS = ['fire', 'drone', 'crash'];     // in der Drohne sichtbar und bedienbar
 function inEl(el, x, y, pad = 0) {
   const r = el.getBoundingClientRect();
   return x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
@@ -2750,13 +2998,53 @@ function updateStick(p) {
   stick.y = -Math.sin(ang) * m;
 }
 
+// Drohnen-Sticks: fester Mittelpunkt, der Knopf folgt bis zum Rand des Rings
+function stickCenter(side) {
+  const r = (side === 'L' ? CTL.stick : CTL.droneR).getBoundingClientRect();
+  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, R: r.width / 2 };
+}
+function moveKnob(side, nx, ny) {
+  const { cx, cy, R } = stickCenter(side);
+  const k = side === 'L' ? knobEl : knobR;
+  k.style.left = (cx + nx * R * 0.72) + 'px';
+  k.style.top = (cy + ny * R * 0.72) + 'px';
+}
+function placeDroneKnobs() {
+  for (const side of ['L', 'R']) {
+    if (![...pointers.values()].some(p => p.role === 'dstick' && p.side === side)) moveKnob(side, 0, 0);
+  }
+}
+function droneSideAt(x, y) {
+  if (inEl(CTL.stick, x, y, 40)) return 'L';
+  if (inEl(CTL.droneR, x, y, 40)) return 'R';
+  return null;
+}
+function updateDStick(p, x, y) {
+  const { cx, cy, R } = stickCenter(p.side);
+  const rk = R * 0.72;
+  let nx = (x - cx) / rk, ny = (y - cy) / rk;
+  const len = Math.hypot(nx, ny);
+  if (len > 1) { nx /= len; ny /= len; }
+  if (p.side === 'L') { dIn.lx = nx; dIn.ly = -ny; } else { dIn.rx = nx; dIn.ry = -ny; }
+  moveKnob(p.side, nx, ny);
+}
+function startDStick(id, side, x, y) {
+  const p = { role: 'dstick', side };
+  pointers.set(id, p);
+  updateDStick(p, x, y);
+}
+function releaseDStick(p) {
+  if (p.side === 'L') { dIn.lx = 0; dIn.ly = 0; } else { dIn.rx = 0; dIn.ry = 0; }
+  moveKnob(p.side, 0, 0);
+}
+
 window.addEventListener('pointerdown', e => {
   if (screen !== 'game' || settingsOpen) return;
   e.preventDefault();
   const x = e.clientX, y = e.clientY, id = e.pointerId;
 
   if (editMode) {
-    const k = ctlAt(x, y) || (inEl(CTL.stick, x, y, 10) ? 'stick' : null);
+    const k = ctlAt(x, y) || (inEl(CTL.stick, x, y, 10) ? 'stick' : null) || (inEl(CTL.droneR, x, y, 10) ? 'droneR' : null);
     if (k) {
       const r = CTL[k].getBoundingClientRect();
       pointers.set(id, { role: 'edit', key: k, dx: x - (r.left + r.width / 2), dy: y - (r.top + r.height / 2) });
@@ -2766,7 +3054,14 @@ window.addEventListener('pointerdown', e => {
   if (inEl(settingsBtn, x, y, 8)) { openSettings(); return; }
 
   const k = ctlAt(x, y);
-  if (k && DRONE.active && !DRONE_KEYS.includes(k)) return;      // in der Drohne nur Drohnen-Knoepfe
+  if (DRONE.active) {                                           // Drohne: 2 Sticks, FEUER, DROHNE, CRASH
+    const dk = DRONE_BTNS.find(kk => inEl(CTL[kk], x, y, 14));
+    if (dk === 'fire') { pointers.set(id, { role: 'fire' }); CTL.fire.classList.add('down'); fireQueued = true; }
+    else if (dk === 'drone') droneEnd();
+    else if (dk === 'crash') droneCrash();
+    else { const side = droneSideAt(x, y); if (side) startDStick(id, side, x, y); }
+    return;
+  }
   if (k === 'jump') {
     pointers.set(id, { role: 'jump' });
     CTL.jump.classList.add('down');
@@ -2780,8 +3075,8 @@ window.addEventListener('pointerdown', e => {
   if (k === 'duck') { toggleStance(1); return; }
   if (k === 'prone') { toggleStance(2); return; }
   if (k === 'gren') { throwPlayerGrenade(); return; }
-  if (k === 'drone') { if (DRONE.active) droneEnd(); else droneLaunch(); return; }
-  if (k === 'crash') { droneCrash(); return; }
+  if (k === 'drone') { droneLaunch(); return; }
+  if (k === 'crash') { return; }
   if (k === 'hotbar') { const i = slotAt(x, y); if (i >= 0) selectSlot(i); return; }
   if (k === 'view') { toggleView(); return; }
 
@@ -2805,18 +3100,14 @@ window.addEventListener('pointermove', e => {
   if (p.role === 'move') {
     p.x = e.clientX; p.y = e.clientY;
     updateStick(p);
+  } else if (p.role === 'dstick') {
+    updateDStick(p, e.clientX, e.clientY);
   } else if (p.role === 'look') {
     const invert = settings.invertY ? -1 : 1;
-    if (DRONE.active) {                                          // Blick der Drohne
-      const sens = LOOK_SENS * settings.sens;
-      DRONE.yaw -= (e.clientX - p.x) * sens;
-      DRONE.pitch = clamp(DRONE.pitch - (e.clientY - p.y) * sens * invert, -1.2, 1.2);
-    } else {
-      const sens = LOOK_SENS * settings.sens * lerp(1, 0.4, zoomAmt);
-      player.yaw -= (e.clientX - p.x) * sens;
-      const dy = (e.clientY - p.y) * sens * invert;
-      player.pitch = clamp(player.pitch - dy, -1.45, 1.45);
-    }
+    const sens = LOOK_SENS * settings.sens * lerp(1, 0.4, zoomAmt);
+    player.yaw -= (e.clientX - p.x) * sens;
+    const dy = (e.clientY - p.y) * sens * invert;
+    player.pitch = clamp(player.pitch - dy, -1.45, 1.45);
     p.x = e.clientX; p.y = e.clientY;
   } else if (p.role === 'edit') {
     const W = window.innerWidth, Hh = window.innerHeight;
@@ -2836,6 +3127,7 @@ function endPointer(e) {
     if (other) updateStick(other);
     else { stick.x = 0; stick.y = 0; setStickVisible(false); }
   }
+  if (p.role === 'dstick') releaseDStick(p);
   if (p.role === 'jump') CTL.jump.classList.remove('down');
   if (p.role === 'fire') CTL.fire.classList.remove('down');
   if (p.role === 'edit') saveSettings();
@@ -2857,7 +3149,7 @@ window.addEventListener('keydown', e => {
   if (/^Digit[1-4]$/.test(e.code)) selectSlot(+e.code.slice(-1) - 1);
   if (e.code === 'KeyT') { if (DRONE.active) droneEnd(); else droneLaunch(); }
   if (e.code === 'KeyK') droneCrash();
-  if (DRONE.active) return;                                       // in der Drohne nur Fliegen und Feuer
+  if (DRONE.active) return;                                       // in der Drohne: Tasten nur fuer die Drohne
   if (e.code === 'Space') {
     e.preventDefault();
     if (player.poseTarget !== 0) player.poseTarget = 0; else player.jumpBuf = JUMP_BUFFER;
@@ -2869,7 +3161,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyG') throwPlayerGrenade();
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
-window.addEventListener('blur', () => { keys.clear(); stick.x = stick.y = 0; });
+window.addEventListener('blur', () => { keys.clear(); stick.x = stick.y = 0; dIn.lx = dIn.ly = dIn.rx = dIn.ry = 0; });
 
 document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 document.addEventListener('gesturestart', e => e.preventDefault());
@@ -2894,8 +3186,8 @@ function step(dt) {
     const wx = -sy * mz + cy * mx, wz = -cy * mz - sy * mx;    // in Welt-Koordinaten
 
     if (DRONE.active) {
-      // Drohne: Stick fliegt, FEUER schiesst. Der Spieler steht still.
-      updateDrone(dt, mx, mz);
+      // Drohne: Sticks fliegen, FEUER schiesst. Der Spieler steht still.
+      updateDrone(dt);
       if (anyRole('fire') || keys.has('KeyF') || fireQueued) droneFire();
       fireQueued = false;
       player.moveX = 0; player.moveZ = 0;
@@ -2942,9 +3234,10 @@ function step(dt) {
       }
     }
 
-    updateGrenades(dt);
-    updateBots(dt);
+    if (!player.dead) recordHist();
+    if (!kc.active) { updateGrenades(dt); updateBots(dt); }     // Killcam friert die Welt ein
     updateEffects(dt);
+    if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.style.display = 'none'; }
 
     // Spieler-Figur: liegen = um die X-Achse drehen, Fuesse leicht anheben
     const lie = clamp(player.pose - 1, 0, 1);

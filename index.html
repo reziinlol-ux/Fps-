@@ -236,7 +236,7 @@
     </label>
     <label class="chk"><input type="checkbox" id="sFixed" /> Joystick fest (statt schwebend)</label>
     <label class="chk"><input type="checkbox" id="sInvert" /> Y-Achse umkehren</label>
-    <label class="chk"><input type="checkbox" id="sLevel" /> Drohne: Hilfen (Auto-Level und Höhenhalten)</label>
+    <label class="chk"><input type="checkbox" id="sSimple" /> Drohne: einfache Steuerung (Stick neigt, Drohne hält die Lage)</label>
     <div class="row">
       <button id="sEdit" class="ghostbtn">Steuerung verschieben</button>
       <button id="sReset" class="ghostbtn">Standard</button>
@@ -296,7 +296,7 @@ const DEFAULT_LAYOUT = {
   crash:  { x: 0.52,  y: 0.60 },
   droneR: { x: 0.87,  y: 0.70 },
 };
-const defaults = { sens: 2, size: 1, fixedStick: false, invertY: false, droneLevel: true, layout: {}, team: 'alpha', slots: ['m4', 'p17', null, null] };
+const defaults = { sens: 2, size: 1, fixedStick: false, invertY: false, droneSimple: true, layout: {}, team: 'alpha', slots: ['m4', 'p17', null, null] };
 let settings = { ...defaults };
 try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} }
@@ -1856,15 +1856,19 @@ function findPath(sx, sz, gx, gz) {
   return path;
 }
 
-// ===================== Drohne: FPV-Physik mit DJI-Steuerung =====================
-// Steuerung wie DJI-Modus 2: Linker Stick = Gas (hoch/runter) und Gieren (links/rechts),
-// rechter Stick = Nicken (vor/zurueck) und Rollen (links/rechts). Stick loslassen = Mitte.
-// Physik: Schub entlang der Hochachse der Drohne, Schwerkraft, Luftwiderstand, Drehraten mit
-// Verzoegerung. Die Lage ist ein Quaternion, Loopings und Ueberschlaege sind moeglich.
+// ===================== Drohne: Steuerung und Flugphysik =====================
+// Einfach (Standard): Der rechte Stick neigt die Drohne, sie haelt die Neigung. Stick loslassen = waagerecht.
+// Linker Stick: Gas (hoch/runter, Stick-Mitte = Schweben) und Drehen (links/rechts).
+// FPV (in den Einstellungen abschaltbar): Die Sticks geben Drehraten vor, ganz ohne Hilfe.
+// Physik in beiden Modi: Schub entlang der Hochachse, Schwerkraft, Luftwiderstand, Lage als Quaternion,
+// Loopings und Ueberschlaege sind moeglich.
 const DRONE_G = 9.8;
 const DRONE_THRUST = 4 * DRONE_G;                         // voller Schub = 4 g, Schweben bei 25 % Gas
 const DRONE_DRAG = 0.035;                                 // quadratischer Luftwiderstand
-const DRONE_RATE = { roll: 2.8, pitch: 2.6, yaw: 2.2 };   // Drehrate bei vollem Ausschlag (rad/s), ca. 130-160 Grad/s
+const DRONE_RATE = { roll: 2.8, pitch: 2.6, yaw: 2.2 };   // FPV: Drehrate bei vollem Ausschlag (rad/s)
+const DRONE_TILT = 0.52;                                  // einfach: groesste Neigung (ca. 30 Grad)
+const DRONE_LEVEL_GAIN = 6;                               // einfach: Regler fuer die Lage
+const DRONE_RATE_MAX_LVL = 3.2;                           // einfach: hoechste Drehrate beim Ausrichten (rad/s)
 const DRONE_CAM_TILT = 0.35;                              // FPV-Kamera 20 Grad nach oben geneigt
 const DRONE_R = 0.22;                                     // Kollisionsradius
 const DRONE_CEIL = 45;                                    // Hoechstflughoehe (m)
@@ -1882,6 +1886,7 @@ const DRONE = {
 // Touch-Sticks, Werte -1..1: ly = Gas (oben +), lx = Gieren (rechts +), rx = Rollen (rechts +), ry = Nicken (vor +)
 const dIn = { lx: 0, ly: 0, rx: 0, ry: 0 };
 const _dUp = new THREE.Vector3(), _dFw = new THREE.Vector3(), _dAx = new THREE.Vector3();
+const _dHd = new THREE.Vector3(), _dRt = new THREE.Vector3(), _dTg = new THREE.Vector3(), _dCr = new THREE.Vector3();
 const _dQ = new THREE.Quaternion(), _dQi = new THREE.Quaternion();
 const _dTilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), DRONE_CAM_TILT);
 const vhsEl = $('vhs'), vhsCanvas = $('vhsNoise'), vhsCtx = vhsCanvas.getContext('2d');
@@ -1942,7 +1947,7 @@ function droneLaunch() {
   DRONE.w.set(0, 0, 0);
   aimOn = false;
   setVhs(true);
-  showToast('Drohne startet · links: Gas und Drehen · rechts: Nicken und Rollen');
+  showToast('Drohne startet · rechts neigen, links Gas und Drehen');
 }
 function droneEnd(msg = null) {
   if (!DRONE.active) return;
@@ -1973,25 +1978,30 @@ function updateDrone(dt) {
   if (DRONE.battery <= 0) { DRONE.battery = 0; droneEnd('Akku leer'); return; }
   DRONE.fireCd -= dt;
 
-  // Drehraten-Befehl in Koerperachsen: x Nicken, y Gieren, z Rollen (vorwaerts = -z)
+  // Drehbefehl in Koerperachsen: x Nicken, y Gieren, z Rollen (vorwaerts = -z)
   const sc = clamp(settings.sens / 2, 0.5, 1.5);
   const pitchIn = settings.invertY ? -inp.ry : inp.ry;
-  let cx = -pitchIn * DRONE_RATE.pitch * sc;                  // Stick vor = Nase runter
-  let cy = -inp.lx * DRONE_RATE.yaw * sc;                     // Stick rechts = nach rechts drehen
-  let cz = -inp.rx * DRONE_RATE.roll * sc;                    // Stick rechts = rechte Seite runter
-  if (settings.droneLevel && inp.rx === 0 && inp.ry === 0) {  // Auto-Level: ohne Stick waagerecht werden
-    _dUp.set(0, 1, 0).applyQuaternion(q);                     // Hochachse der Drohne in der Welt
-    let ax = -_dUp.z, az = _dUp.x, amt;
-    const len = Math.hypot(ax, az);
-    const lvl = _dUp.y < 0.5 ? 3.5 : 2.2;                     // steil oder kopfueber: schneller zurueck
-    if (len > 1e-3) {
-      ax /= len; az /= len;
-      amt = Math.min(1, len * 3);
-      if (_dUp.y < 0.5) amt = Math.max(amt, 0.6);
-    } else if (_dUp.y < 0) { ax = 1; az = 0; amt = 1; }       // genau auf dem Kopf: ueber die Seite drehen
-    else amt = 0;
-    _dAx.set(ax * amt * lvl, 0, az * amt * lvl).applyQuaternion(_dQi.copy(q).invert());
-    cx += _dAx.x; cz += _dAx.z;
+  const cy = -inp.lx * DRONE_RATE.yaw * sc;                   // Stick rechts = nach rechts drehen
+  let cx, cz;
+  if (settings.droneSimple) {
+    // Einfach: der rechte Stick gibt die Neigung vor, die Drohne haelt sie (Stick loslassen = waagerecht)
+    _dHd.set(0, 0, -1).applyQuaternion(q); _dHd.y = 0;        // Blickrichtung waagerecht
+    if (_dHd.lengthSq() < 1e-6) _dHd.set(0, 0, -1); else _dHd.normalize();
+    _dRt.set(-_dHd.z, 0, _dHd.x);                              // rechts von der Blickrichtung
+    _dTg.set(0, 1, 0).addScaledVector(_dHd, Math.tan(DRONE_TILT * pitchIn))
+                      .addScaledVector(_dRt, Math.tan(DRONE_TILT * inp.rx)).normalize();   // Ziel-Hochachse
+    _dUp.set(0, 1, 0).applyQuaternion(q);
+    _dCr.crossVectors(_dUp, _dTg);                             // Drehachse zum Ziel
+    if (_dCr.lengthSq() < 1e-6 && _dUp.dot(_dTg) < 0) _dCr.copy(_dRt);   // genau auf dem Kopf: ueber die Seite drehen
+    _dCr.multiplyScalar(DRONE_LEVEL_GAIN);
+    const lenC = _dCr.length();
+    if (lenC > DRONE_RATE_MAX_LVL) _dCr.multiplyScalar(DRONE_RATE_MAX_LVL / lenC);
+    _dCr.applyQuaternion(_dQi.copy(q).invert());               // in Koerperachsen
+    cx = _dCr.x; cz = _dCr.z;
+  } else {
+    // FPV: der Stick gibt die Drehrate vor, ohne Hilfe
+    cx = -pitchIn * DRONE_RATE.pitch * sc;                     // Stick vor = Nase runter
+    cz = -inp.rx * DRONE_RATE.roll * sc;                       // Stick rechts = rechte Seite runter
   }
 
   // Drehraten folgen dem Befehl verzoegert (Motor und Regler) und drehen die Lage
@@ -2007,9 +2017,9 @@ function updateDrone(dt) {
   }
 
   // Gas: Stick in der Mitte = Schweben, oben = steigen, unten = sinken
-  _dUp.set(0, 1, 0).applyQuaternion(q);                       // Hochachse nach dem Drehen
+  _dUp.set(0, 1, 0).applyQuaternion(q);                        // Hochachse nach dem Drehen
   let gasCmd = 0.25 + inp.ly * 0.21;
-  if (settings.droneLevel && Math.abs(inp.ly) < 0.02) {       // Hilfe: Hoehe halten, in der Rueckenlage Motor zurueck
+  if (settings.droneSimple && Math.abs(inp.ly) < 0.02) {      // Hilfe: Hoehe halten, in der Rueckenlage Motor zurueck
     gasCmd = _dUp.y < -0.3 ? 0.04 : 0.25 + clamp(-DRONE.vy * 0.03, -0.12, 0.12);
   }
   DRONE.tAct += (gasCmd - DRONE.tAct) * (1 - Math.exp(-dt * 12));
@@ -2915,7 +2925,7 @@ function openSettings() {
   $('sSize').value = Math.round(settings.size * 100);
   $('sFixed').checked = settings.fixedStick;
   $('sInvert').checked = settings.invertY;
-  $('sLevel').checked = settings.droneLevel;
+  $('sSimple').checked = settings.droneSimple;
   updateSettingLabels();
   settingsEl.classList.remove('hidden');
 }
@@ -2932,11 +2942,11 @@ $('sSens').addEventListener('input', e => { settings.sens = e.target.value / 100
 $('sSize').addEventListener('input', e => { settings.size = e.target.value / 100; updateSettingLabels(); applyLayout(); });
 $('sFixed').addEventListener('change', e => { settings.fixedStick = e.target.checked; applyLayout(); });
 $('sInvert').addEventListener('change', e => { settings.invertY = e.target.checked; });
-$('sLevel').addEventListener('change', e => { settings.droneLevel = e.target.checked; });
+$('sSimple').addEventListener('change', e => { settings.droneSimple = e.target.checked; });
 $('sClose').addEventListener('click', closeSettings);
 $('sLobby').addEventListener('click', () => { closeSettings(); setScreen('lobby'); renderLobby(); });
 $('sReset').addEventListener('click', () => {
-  settings.sens = 2; settings.size = 1; settings.fixedStick = false; settings.invertY = false; settings.droneLevel = true; settings.layout = {};
+  settings.sens = 2; settings.size = 1; settings.fixedStick = false; settings.invertY = false; settings.droneSimple = true; settings.layout = {};
   openSettings(); applyLayout(); saveSettings();
 });
 $('sEdit').addEventListener('click', () => enterEdit());
